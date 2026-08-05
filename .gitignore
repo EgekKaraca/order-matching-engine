@@ -1,0 +1,15 @@
+build/
+cmake-build-*/
+compile_commands.json
+
+# Generated workloads and replay output. A normal-scenario workload is ~80 MB
+# and the canonical text ~180 MB — both are reproducible from the generator and
+# the reference, so neither belongs in git.
+*.bin
+*.so
+*.dylib
+/data/
+/out/
+
+.DS_Store
+.cache/
