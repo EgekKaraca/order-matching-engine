@@ -68,9 +68,12 @@ struct Report {
     }
 
     // Emitted both for a successful cancel and for the dropped residual of a
-    // partially-filled IOC order. The canonical line carries no quantity.
-    static constexpr Report cancel_ack(SeqNum seq, OrderId id, Side side, Price price) noexcept {
-        return {ReportType::CancelAck, side, seq, id, price, {}, {}, {}};
+    // partially-filled IOC order. `qty` is the quantity withdrawn: the ABI
+    // struct carries it and the reference adapters populate it, but the
+    // canonical line omits it, so it is invisible to the correctness hash.
+    static constexpr Report cancel_ack(SeqNum seq, OrderId id, Side side, Price price,
+                                       Quantity qty = {}) noexcept {
+        return {ReportType::CancelAck, side, seq, id, price, qty, {}, {}};
     }
 
     static constexpr Report modify_ack(SeqNum seq, OrderId id, Side side, Price new_price,
