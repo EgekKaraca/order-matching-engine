@@ -14,6 +14,7 @@
 // of the verdict — without leaving the development machine. What still needs
 // the Linux box: the timed run, the random-point state audit, and the
 // anti-cheat checks that together make it `Verdict: VALID`.
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -22,6 +23,7 @@
 #include <string>
 #include <vector>
 
+#include "match/arena_book.hpp"
 #include "match/canonical.hpp"
 #include "match/map_book.hpp"
 #include "match/report.hpp"
@@ -101,23 +103,11 @@ struct CollectingSink {
     void operator()(const match::Report& r) const { out->push_back(r); }
 };
 
-}  // namespace
-
-int main(int argc, char** argv) {
-    if (argc < 3) {
-        std::cerr << "usage: replay <workload.bin> <out.txt>\n";
-        return 2;
-    }
-
-    std::vector<Message> messages;
-    if (!load_workload(argv[1], messages)) return 1;
-    std::cout << "loaded " << messages.size() << " messages\n";
-
-    std::vector<match::Report> reports;
-    reports.reserve(messages.size() + messages.size() / 4);
-
-    match::MapBook<CollectingSink> book{CollectingSink{&reports}};
-
+// Both engines are driven through the identical loop, so a throughput
+// comparison between them is a comparison of the engines and not of two
+// different harnesses.
+template <typename Book>
+void drive(Book& book, const std::vector<Message>& messages) {
     for (const Message& m : messages) {
         const auto side = static_cast<match::Side>(m.side);
         switch (m.type) {
@@ -135,11 +125,56 @@ int main(int argc, char** argv) {
                                match::Price{m.price_ticks}, match::Quantity{m.quantity});
                 break;
             default:
-                std::cerr << "unknown message type " << static_cast<int>(m.type) << " at seq "
-                          << m.seq << '\n';
-                return 1;
+                break;
         }
     }
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    if (argc < 3) {
+        std::cerr << "usage: replay <workload.bin> <out.txt> [map|arena]\n";
+        return 2;
+    }
+
+    std::vector<Message> messages;
+    if (!load_workload(argv[1], messages)) return 1;
+    std::cout << "loaded " << messages.size() << " messages\n";
+
+    std::vector<match::Report> reports;
+    reports.reserve(messages.size() + messages.size() / 4);
+
+    const std::string engine = argc > 3 ? argv[3] : "map";
+    if (engine != "map" && engine != "arena") {
+        std::cerr << "unknown engine '" << engine << "' — expected map or arena\n";
+        return 2;
+    }
+
+    const auto started = std::chrono::steady_clock::now();
+    std::int64_t best_bid = 0;
+    std::int64_t best_ask = 0;
+    std::size_t resting = 0;
+    bool valid = false;
+
+    if (engine == "arena") {
+        match::ArenaBook<CollectingSink> book{CollectingSink{&reports}, 1u << 20};
+        drive(book, messages);
+        best_bid = book.best_bid().ticks;
+        best_ask = book.best_ask().ticks;
+        resting = book.resting_count();
+        valid = book.validate();
+    } else {
+        match::MapBook<CollectingSink> book{CollectingSink{&reports}};
+        drive(book, messages);
+        best_bid = book.best_bid().ticks;
+        best_ask = book.best_ask().ticks;
+        resting = book.resting_count();
+        valid = book.validate();
+    }
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    const double seconds =
+        std::chrono::duration_cast<std::chrono::duration<double>>(elapsed).count();
 
     // Per-type counts. Cheap, and they localise a whole class of divergence
     // before hashing anything: the reference's own counts for normal/seed 23
@@ -167,8 +202,15 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "wrote " << argv[2] << '\n';
-    std::cout << "book after replay: best_bid=" << book.best_bid().ticks
-              << " best_ask=" << book.best_ask().ticks << " resting=" << book.resting_count()
-              << " valid=" << (book.validate() ? "yes" : "NO") << '\n';
+    std::cout << "book after replay: best_bid=" << best_bid << " best_ask=" << best_ask
+              << " resting=" << resting << " valid=" << (valid ? "yes" : "NO") << '\n';
+    // A local, same-machine number only. It is NOT comparable to the published
+    // figures: those are measured by the harness on Graviton4, open-loop and
+    // coordinated-omission-free, and include report transport. This is a
+    // stopwatch around a loop with an in-process vector sink.
+    std::cout << "engine=" << engine << " matched " << messages.size() << " messages in "
+              << seconds << "s = "
+              << (seconds > 0 ? static_cast<double>(messages.size()) / seconds / 1e6 : 0.0)
+              << " M msg/s (LOCAL, not the harness number)\n";
     return 0;
 }

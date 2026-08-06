@@ -71,8 +71,13 @@ for scenario in "${SCENARIOS[@]}"; do
     fi
   }
 
-  "$REPLAY" "$workload" "$WORK/$scenario.txt" >"$WORK/$scenario.log"
-  check engine "$WORK/$scenario.txt"
+  # Both engines, every scenario. The optimised engine is only trustworthy
+  # because it is held to the identical published hash, not because it passed
+  # a differential test against the reference one.
+  for eng in map arena; do
+    "$REPLAY" "$workload" "$WORK/$scenario.$eng.txt" "$eng" >"$WORK/$scenario.$eng.log"
+    check "$eng" "$WORK/$scenario.$eng.txt"
+  done
 
   if (( run_abi )); then
     "$ABI_REPLAY" "$ADAPTER" "$workload" "$WORK/$scenario.abi.txt" >"$WORK/$scenario.abi.log"

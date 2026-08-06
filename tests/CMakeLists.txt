@@ -16,6 +16,7 @@ add_executable(match_tests
   types_test.cpp
   map_book_test.cpp
   property_test.cpp
+  engine_equivalence_test.cpp
   canonical_test.cpp
   lobster_test.cpp
   sim_test.cpp)
