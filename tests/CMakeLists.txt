@@ -16,8 +16,10 @@ add_executable(match_tests
   types_test.cpp
   map_book_test.cpp
   property_test.cpp
-  canonical_test.cpp)
+  canonical_test.cpp
+  lobster_test.cpp)
 
-target_link_libraries(match_tests PRIVATE match match_warnings GTest::gtest_main)
+# adapters links match PUBLIC, so naming both here makes the linker see it twice.
+target_link_libraries(match_tests PRIVATE adapters match_warnings GTest::gtest_main)
 
 gtest_discover_tests(match_tests)

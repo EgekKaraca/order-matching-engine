@@ -430,6 +430,46 @@ TEST_F(BookTest, ModifyQuantityIncreaseGoesToTheBackOfTheQueue) {
     EXPECT_EQ(lines(), (Lines{"0,3,1,3,100,30", "1,3,100,10,2,3", "1,3,100,20,1,3"}));
 }
 
+// --- in-place size reduction -------------------------------------------------
+// Not reachable from the benchmark ABI; this is the production semantic that
+// LOBSTER's partial cancels and executions need.
+
+TEST_F(BookTest, ReduceKeepsQueuePosition) {
+    add(1, Side::Buy, 100, 50);
+    add(2, Side::Buy, 100, 50);
+    EXPECT_EQ(book_.reduce(OrderId{1}, Quantity{30}), Quantity{30});
+    EXPECT_TRUE(book_.validate());
+    EXPECT_EQ(book_.depth_at(Price{100}, Side::Buy), 70u);
+    clear();
+
+    // Order 1 still leads with its remaining 20 — a decrease does not send an
+    // order to the back of its own queue. This is the whole reason reduce()
+    // exists rather than reusing modify.
+    add(3, Side::Sell, 100, 20);
+    EXPECT_EQ(lines(), (Lines{"0,2,1,3,100,20", "1,2,100,20,1,3"}));
+}
+
+TEST_F(BookTest, ReduceToZeroRemovesTheOrder) {
+    add(1, Side::Buy, 100, 50);
+    EXPECT_EQ(book_.reduce(OrderId{1}, Quantity{50}), Quantity{50});
+    EXPECT_TRUE(book_.validate());
+    EXPECT_TRUE(book_.empty());
+    EXPECT_EQ(book_.best_bid(), Price::no_bid());  // no phantom level left behind
+}
+
+TEST_F(BookTest, ReduceClampsToWhatIsResting) {
+    add(1, Side::Buy, 100, 50);
+    EXPECT_EQ(book_.reduce(OrderId{1}, Quantity{999}), Quantity{50});
+    EXPECT_TRUE(book_.empty());
+}
+
+TEST_F(BookTest, ReduceOfANonRestingOrderRemovesNothing) {
+    clear();
+    EXPECT_EQ(book_.reduce(OrderId{42}, Quantity{10}), Quantity{0});
+    EXPECT_TRUE(book_.validate());
+    EXPECT_TRUE(lines().empty()) << "reduce() emits no report — the caller reports";
+}
+
 // --- price domain ------------------------------------------------------------
 
 TEST_F(BookTest, HandlesPricesNearTheRepresentationalCeiling) {

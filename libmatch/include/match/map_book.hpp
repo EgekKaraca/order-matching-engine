@@ -110,6 +110,43 @@ public:
         emit(Report::modify_ack(seq, id, side, new_price, new_qty));
     }
 
+    // Reduces a resting order in place, KEEPING its queue position, and
+    // returns the quantity actually removed (0 if the order is not resting,
+    // and clamped to what was left). Removes the order entirely if the
+    // reduction consumes it.
+    //
+    // This is the production exchange semantic for a size decrease, and it is
+    // what LOBSTER's type-2 partial cancels and type-4 visible executions do to
+    // a resting order — an order that loses size does not go to the back of its
+    // own queue. It is deliberately unreachable from the benchmark C ABI, whose
+    // modify is always cancel + reinsert; docs/CONFORMANCE.md leaves the
+    // decrease convention unspecified because engines legitimately differ, and
+    // every modify in the canonical workload is a reprice or an increase. So
+    // this cannot move the conformance hash, and check_hashes.sh confirms it.
+    //
+    // Emits no report on purpose: only the caller knows whether the reduction
+    // was a cancellation or an execution, and labelling an execution as a
+    // CancelAck would put a lie into the event stream.
+    Quantity reduce(OrderId id, Quantity delta) {
+        const auto found = index_.find(id);
+        if (found == index_.end()) return Quantity{0};
+
+        const Locator loc = found->second;
+        const Quantity removed{std::min(delta.units, loc.node->remaining.units)};
+
+        if (removed == loc.node->remaining) {
+            unlink(loc);
+            index_.erase(found);
+            return removed;
+        }
+        if (loc.side == Side::Buy) {
+            reduce_in(bids_, loc, removed);
+        } else {
+            reduce_in(asks_, loc, removed);
+        }
+        return removed;
+    }
+
     // --- audit queries -----------------------------------------------------
     // These read the live book, never a shadow. An empty level is erased the
     // moment it empties, so a dead best price can never be observed here.
@@ -229,6 +266,16 @@ private:
         level.total -= loc.node->remaining.units;
         level.orders.erase(loc.node);
         if (level.orders.empty()) levels.erase(level_it);
+    }
+
+    // Decrements one node and its level total together — the two must never
+    // move independently, which is what validate() checks.
+    template <typename Levels>
+    void reduce_in(Levels& levels, const Locator& loc, Quantity removed) {
+        const auto level_it = levels.find(loc.price);
+        assert(level_it != levels.end() && "locator points at a level that is gone");
+        level_it->second.total -= removed.units;
+        loc.node->remaining -= removed;
     }
 
     template <typename Levels>
