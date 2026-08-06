@@ -1,0 +1,250 @@
+#include "sim/simulator.hpp"
+
+#include <algorithm>
+#include <limits>
+#include <utility>
+
+namespace sim {
+
+Simulator::Simulator(Strategy& strategy, DelayModel& feed_delay, DelayModel& order_delay,
+                     SimulatorConfig config)
+    : strategy_(strategy),
+      feed_delay_(feed_delay),
+      order_delay_(order_delay),
+      config_(config),
+      book_(TradeSink{this}),
+      portfolio_(config.fees) {
+    // Ids come from the gate, which owns the counter.
+    gate_.set_next_id(config.strategy_id_base);
+}
+
+void Simulator::seed_level(match::Side side, match::Price price, match::Quantity quantity) {
+    book_.on_new_order(match::Order{match::OrderId{next_seed_id_++}, match::SeqNum{0}, price,
+                                    quantity, side, match::TimeInForce::Gtc});
+}
+
+void Simulator::on_market_event(const MarketEvent& event) {
+    now_ = event.time;
+    ++stats_.events;
+
+    // Order of operations matters and is not arbitrary. Strategy orders whose
+    // arrival time has come must reach the book BEFORE this event is applied:
+    // an order that arrived at 10:00:00.5 was in the queue when the 10:00:01
+    // execution swept it, and applying it afterwards would silently save it
+    // from every fill it should have taken.
+    release_orders(now_);
+
+    switch (event.type) {
+        case MarketEventType::Add:
+            book_.on_new_order(match::Order{event.id, match::SeqNum{0}, event.price,
+                                            event.quantity, event.side,
+                                            match::TimeInForce::Gtc});
+            break;
+
+        case MarketEventType::Reduce:
+        case MarketEventType::Delete: {
+            const match::Quantity got = book_.reduce(event.id, event.quantity);
+            if (got < event.quantity) {
+                // Liquidity whose arrival was never captured. Drain the level.
+                book_.consume_at(event.side, event.price, event.quantity - got);
+            }
+            break;
+        }
+
+        case MarketEventType::Execute: {
+            // The aggressor that caused this execution, replayed as a real
+            // incoming order so the engine's FIFO decides who fills. This is
+            // the whole mechanism: if a strategy order sits ahead of the
+            // historical maker in the queue, the strategy fills instead — which
+            // is exactly what would have happened.
+            //
+            // IOC, because an execution consumes what is there and leaves
+            // nothing resting; a GTC residual would invent liquidity.
+            book_.on_new_order(match::Order{match::OrderId{config_.aggressor_id},
+                                            match::SeqNum{0}, event.price, event.quantity,
+                                            match::opposite(event.side),
+                                            match::TimeInForce::Ioc});
+            break;
+        }
+    }
+
+    publish_snapshot(now_);
+    deliver_due(now_);
+}
+
+void Simulator::on_report(const match::Report& report) {
+    if (report.type != match::ReportType::Trade) return;
+
+    // Only the strategy's own fills are of interest; the historical crowd's
+    // trades are scenery.
+    const auto maker = live_orders_.find(report.maker_order_id);
+    if (maker == live_orders_.end()) return;
+
+    Fill fill;
+    fill.time = now_;
+    fill.id = report.maker_order_id;
+    fill.side = order_sides_[report.maker_order_id];
+    fill.price = report.price;
+    fill.quantity = report.quantity;
+    fill.maker = true;  // it was resting, so it provided liquidity
+    fill.queue_ahead_at_entry = maker->second;
+
+    portfolio_.apply(fill);
+    fills_.push_back(fill);
+    ++stats_.strategy_fills;
+
+    // The strategy learns about it only after feed latency — a fill report is
+    // a message from the venue like any other.
+    fill_queue_.push_back(PendingFill{now_ + feed_delay_.sample(now_), fill});
+
+    // If the order is now gone, stop tracking it. The engine has already
+    // removed it; this only keeps the mirror tidy.
+    if (!book_.quantity_ahead(report.maker_order_id).has_value()) {
+        live_orders_.erase(maker);
+        order_sides_.erase(report.maker_order_id);
+        gone_queue_.push_back(
+            PendingGone{now_ + feed_delay_.sample(now_), report.maker_order_id, true});
+        ++stats_.orders_retired;
+    }
+}
+
+void Simulator::release_orders(Time now) {
+    // Cancels first: within the same instant, a cancel the strategy sent
+    // earlier should not be defeated by a resubmission it sent later.
+    while (!pending_cancels_.empty() && pending_cancels_.front().arrival <= now) {
+        const auto cancel = pending_cancels_.front();
+        pending_cancels_.pop_front();
+
+        if (live_orders_.erase(cancel.id) == 0) {
+            // Already filled or already gone — the classic "too late to
+            // cancel", and a real cost of order latency rather than an error.
+            ++stats_.rejected_cancels;
+            continue;
+        }
+        order_sides_.erase(cancel.id);
+        book_.on_cancel(match::SeqNum{0}, cancel.id);
+        gone_queue_.push_back(PendingGone{now + feed_delay_.sample(now), cancel.id, false});
+        ++stats_.orders_retired;
+    }
+
+    while (!pending_submits_.empty() && pending_submits_.front().arrival <= now) {
+        const auto submit = pending_submits_.front();
+        pending_submits_.pop_front();
+
+        book_.on_new_order(match::Order{submit.id, match::SeqNum{0}, submit.price,
+                                        submit.quantity, submit.side, match::TimeInForce::Gtc});
+
+        // Record the queue depth ahead of it AT ENTRY. This is the number a
+        // naive fill model assumes is zero, and capturing it here — rather
+        // than reconstructing it later — is what makes the comparison in the
+        // study a measurement rather than an estimate.
+        const auto ahead = book_.quantity_ahead(submit.id);
+        if (ahead.has_value()) {
+            live_orders_[submit.id] = *ahead;
+            order_sides_[submit.id] = submit.side;
+        }
+        // If it has no queue position it filled instantly on arrival, and
+        // on_report has already accounted for it.
+    }
+}
+
+void Simulator::publish_snapshot(Time as_of) {
+    VisibleUpdate update;
+    update.as_of = as_of;
+    update.visible_at = as_of + feed_delay_.sample(as_of);
+    update.best_bid = book_.best_bid();
+    update.best_ask = book_.best_ask();
+    update.bid_size = update.best_bid == match::Price::no_bid()
+                          ? 0
+                          : book_.depth_at(update.best_bid, match::Side::Buy);
+    update.ask_size = update.best_ask == match::Price::no_ask()
+                          ? 0
+                          : book_.depth_at(update.best_ask, match::Side::Sell);
+    feed_queue_.push_back(update);
+
+    if (update.best_bid != match::Price::no_bid() && update.best_ask != match::Price::no_ask()) {
+        mid_series_.emplace_back(as_of, update.best_bid.ticks + update.best_ask.ticks);
+    }
+}
+
+BookView Simulator::current_view(Time now) const {
+    return BookView{last_view_.as_of(),  now,
+                    last_view_.best_bid(), last_view_.bid_size(),
+                    last_view_.best_ask(), last_view_.ask_size()};
+}
+
+void Simulator::deliver_due(Time now) {
+    bool book_changed = false;
+    while (!feed_queue_.empty() && feed_queue_.front().visible_at <= now) {
+        const auto update = feed_queue_.front();
+        feed_queue_.pop_front();
+        last_view_ = BookView{update.as_of,   now,          update.best_bid,
+                              update.bid_size, update.best_ask, update.ask_size};
+        book_changed = true;
+    }
+
+    while (!fill_queue_.empty() && fill_queue_.front().visible_at <= now) {
+        const auto pending = fill_queue_.front();
+        fill_queue_.pop_front();
+        gate_.clear();
+        strategy_.on_fill(pending.fill, current_view(now), gate_);
+        ++stats_.callbacks;
+        schedule_from_gate(now);
+    }
+
+    while (!gone_queue_.empty() && gone_queue_.front().visible_at <= now) {
+        const auto gone = gone_queue_.front();
+        gone_queue_.pop_front();
+        gate_.clear();
+        strategy_.on_order_gone(gone.id, gone.filled, gate_);
+        ++stats_.callbacks;
+        schedule_from_gate(now);
+    }
+
+    if (book_changed) run_callbacks(now);
+}
+
+void Simulator::run_callbacks(Time now) {
+    gate_.clear();
+    strategy_.on_book(current_view(now), gate_);
+    ++stats_.callbacks;
+    schedule_from_gate(now);
+}
+
+void Simulator::schedule_from_gate(Time decided_at) {
+    // One latency draw per action, at the moment of the decision. The strategy
+    // has no say in this: it cannot specify an arrival time, so it cannot
+    // back-date an order into a queue position it did not earn.
+    for (const auto& submit : gate_.submits()) {
+        pending_submits_.push_back(PendingSubmit{decided_at + order_delay_.sample(decided_at),
+                                                 submit.side, submit.price, submit.quantity,
+                                                 submit.id});
+        ++stats_.strategy_submits;
+    }
+    for (const match::OrderId id : gate_.cancels()) {
+        pending_cancels_.push_back(
+            PendingCancel{decided_at + order_delay_.sample(decided_at), id});
+        ++stats_.strategy_cancels;
+    }
+    gate_.clear();
+
+    // A variable delay can invert arrival order, so both queues are kept
+    // sorted by arrival rather than by submission. Stable, so two actions
+    // drawing the same delay keep the order the strategy issued them in.
+    std::stable_sort(pending_submits_.begin(), pending_submits_.end(),
+                     [](const PendingSubmit& a, const PendingSubmit& b) {
+                         return a.arrival < b.arrival;
+                     });
+    std::stable_sort(pending_cancels_.begin(), pending_cancels_.end(),
+                     [](const PendingCancel& a, const PendingCancel& b) {
+                         return a.arrival < b.arrival;
+                     });
+}
+
+void Simulator::finish() {
+    // Let anything already in flight land, so orders are not left in a limbo
+    // that flatters the fill rate.
+    release_orders(Time{std::numeric_limits<std::int64_t>::max()});
+}
+
+}  // namespace sim

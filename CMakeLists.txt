@@ -25,7 +25,9 @@ target_compile_options(match_warnings INTERFACE
   $<$<BOOL:${MATCH_WERROR}>:-Werror>)
 
 add_subdirectory(libmatch)
+add_subdirectory(libsim)
 add_subdirectory(adapters)
+add_subdirectory(studies)
 add_subdirectory(tools)
 
 if(MATCH_BUILD_TESTS)

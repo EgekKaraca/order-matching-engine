@@ -5,7 +5,7 @@ add_library(adapters
 target_include_directories(adapters PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 
-target_link_libraries(adapters PUBLIC match)
+target_link_libraries(adapters PUBLIC match sim)
 target_link_libraries(adapters PRIVATE match_warnings)
 
 add_library(match::adapters ALIAS adapters)
