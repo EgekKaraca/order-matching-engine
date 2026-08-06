@@ -18,6 +18,7 @@
 
 #include "adapters/lobster.hpp"
 #include "adapters/lobster_events.hpp"
+#include "sim/fill_model.hpp"
 #include "sim/latency.hpp"
 #include "sim/simulator.hpp"
 #include "sim/strategies/fixed_offset_maker.hpp"
@@ -73,7 +74,8 @@ int main(int argc, char** argv) {
     // passive, so it should be collecting the first.
     config.fees = sim::FeeSchedule{-2, 3};
 
-    sim::Simulator simulator(strategy, feed_delay, order_delay, config);
+    sim::L3ExactFill fill_model;
+    sim::Simulator simulator(strategy, feed_delay, order_delay, fill_model, config);
 
     // Seed from published row 0, exactly as the reconstruction oracle does.
     {

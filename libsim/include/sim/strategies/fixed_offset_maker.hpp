@@ -27,7 +27,22 @@
 
 namespace sim {
 
+// Where to put the quotes. This choice decides whether the experiment measures
+// anything at all.
+enum class QuoteMode {
+    // Quote a fixed distance from the mid. When the spread is wider than twice
+    // the offset this lands INSIDE the spread, where there is no queue to join
+    // — so every fill model agrees and the study measures nothing. AAPL in 2012
+    // routinely ran a $0.61 spread, which is exactly this trap.
+    OffsetFromMid,
+    // Join the back of the queue at the current touch. This is what a passive
+    // market maker actually does, and it is the only mode in which queue
+    // position exists to be modelled.
+    JoinTouch,
+};
+
 struct FixedOffsetMakerConfig {
+    QuoteMode mode = QuoteMode::JoinTouch;
     // How far from the mid to quote, in price units. Larger means a better
     // price if filled and a longer wait to be filled — which is exactly the
     // trade-off the fill model governs.
@@ -55,8 +70,17 @@ public:
         // Work in doubled prices to keep the mid exact, then halve once. A
         // half-unit mid rounds toward the passive side on each quote, which is
         // conservative: it never quotes more aggressively than intended.
-        const std::int64_t bid_target = (*mid_x2 - 2 * config_.offset) / 2;
-        const std::int64_t ask_target = (*mid_x2 + 2 * config_.offset + 1) / 2;
+        std::int64_t bid_target = 0;
+        std::int64_t ask_target = 0;
+        if (config_.mode == QuoteMode::JoinTouch) {
+            // Join the existing best bid and offer, behind whatever is already
+            // queued there. Every fill then has to be waited for.
+            bid_target = book.best_bid().ticks;
+            ask_target = book.best_ask().ticks;
+        } else {
+            bid_target = (*mid_x2 - 2 * config_.offset) / 2;
+            ask_target = (*mid_x2 + 2 * config_.offset + 1) / 2;
+        }
 
         // The limit is on total EXPOSURE, not just on filled position. An order
         // that has been cancelled but whose cancel has not yet landed is still

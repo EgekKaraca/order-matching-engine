@@ -31,6 +31,7 @@
 #include "match/map_book.hpp"
 #include "match/report.hpp"
 #include "match/types.hpp"
+#include "sim/fill_model.hpp"
 #include "sim/latency.hpp"
 #include "sim/portfolio.hpp"
 #include "sim/strategy.hpp"
@@ -58,8 +59,11 @@ struct SimulatorStats {
 
 class Simulator {
 public:
+    // `fill_model` decides whether a strategy order fills. Pass L3ExactFill to
+    // let the engine decide; the other models answer a counterfactual and
+    // deliberately keep the strategy's orders out of the book.
     Simulator(Strategy& strategy, DelayModel& feed_delay, DelayModel& order_delay,
-              SimulatorConfig config = {});
+              FillModel& fill_model, SimulatorConfig config = {});
 
     // Seeds the book with resting liquidity that has no per-order identity —
     // a depth snapshot at the start of the window.
@@ -121,6 +125,9 @@ private:
     using Book = match::MapBook<TradeSink>;
 
     void on_report(const match::Report& report);
+    void record_fill(match::OrderId id, match::Side side, match::Price price,
+                     match::Quantity quantity, match::AggregateQuantity ahead_at_entry);
+    void apply_model_fills(const MarketEvent& event);
     void deliver_due(Time now);
     void release_orders(Time now);
     void publish_snapshot(Time as_of);
@@ -131,6 +138,7 @@ private:
     void run_callbacks(Time now);
 
     Strategy& strategy_;
+    FillModel& fill_model_;
     DelayModel& feed_delay_;
     DelayModel& order_delay_;
     SimulatorConfig config_;
@@ -153,6 +161,12 @@ private:
     // entered the book.
     std::unordered_map<match::OrderId, match::AggregateQuantity> live_orders_;
     std::unordered_map<match::OrderId, match::Side> order_sides_;
+    std::unordered_map<match::OrderId, match::Quantity> remaining_;
+    std::vector<ModelFill> model_fills_;
+
+    // Read-only window onto the historical book for the counterfactual models.
+    struct Probe;
+    friend struct Probe;
 
     BookView last_view_;
     std::vector<Fill> fills_;

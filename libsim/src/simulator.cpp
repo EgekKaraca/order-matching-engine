@@ -6,9 +6,22 @@
 
 namespace sim {
 
+// The historical book, seen read-only, for models that estimate rather than
+// participate.
+struct Simulator::Probe final : BookProbe {
+    explicit Probe(const Simulator* sim) : owner(sim) {}
+    const Simulator* owner;
+    match::AggregateQuantity depth_at(match::Price price, match::Side side) const override {
+        return owner->book_.depth_at(price, side);
+    }
+    match::Price best_bid() const override { return owner->book_.best_bid(); }
+    match::Price best_ask() const override { return owner->book_.best_ask(); }
+};
+
 Simulator::Simulator(Strategy& strategy, DelayModel& feed_delay, DelayModel& order_delay,
-                     SimulatorConfig config)
+                     FillModel& fill_model, SimulatorConfig config)
     : strategy_(strategy),
+      fill_model_(fill_model),
       feed_delay_(feed_delay),
       order_delay_(order_delay),
       config_(config),
@@ -68,8 +81,30 @@ void Simulator::on_market_event(const MarketEvent& event) {
         }
     }
 
+    if (!fill_model_.uses_engine()) apply_model_fills(event);
+
     publish_snapshot(now_);
     deliver_due(now_);
+}
+
+void Simulator::record_fill(match::OrderId id, match::Side side, match::Price price,
+                            match::Quantity quantity, match::AggregateQuantity ahead_at_entry) {
+    Fill fill;
+    fill.time = now_;
+    fill.id = id;
+    fill.side = side;
+    fill.price = price;
+    fill.quantity = quantity;
+    fill.maker = true;  // it was resting, so it provided liquidity
+    fill.queue_ahead_at_entry = ahead_at_entry;
+
+    portfolio_.apply(fill);
+    fills_.push_back(fill);
+    ++stats_.strategy_fills;
+
+    // The strategy learns about it only after feed latency — a fill report is
+    // a message from the venue like any other.
+    fill_queue_.push_back(PendingFill{now_ + feed_delay_.sample(now_), fill});
 }
 
 void Simulator::on_report(const match::Report& report) {
@@ -80,22 +115,8 @@ void Simulator::on_report(const match::Report& report) {
     const auto maker = live_orders_.find(report.maker_order_id);
     if (maker == live_orders_.end()) return;
 
-    Fill fill;
-    fill.time = now_;
-    fill.id = report.maker_order_id;
-    fill.side = order_sides_[report.maker_order_id];
-    fill.price = report.price;
-    fill.quantity = report.quantity;
-    fill.maker = true;  // it was resting, so it provided liquidity
-    fill.queue_ahead_at_entry = maker->second;
-
-    portfolio_.apply(fill);
-    fills_.push_back(fill);
-    ++stats_.strategy_fills;
-
-    // The strategy learns about it only after feed latency — a fill report is
-    // a message from the venue like any other.
-    fill_queue_.push_back(PendingFill{now_ + feed_delay_.sample(now_), fill});
+    record_fill(report.maker_order_id, order_sides_[report.maker_order_id], report.price,
+                report.quantity, maker->second);
 
     // If the order is now gone, stop tracking it. The engine has already
     // removed it; this only keeps the mirror tidy.
@@ -105,6 +126,32 @@ void Simulator::on_report(const match::Report& report) {
         gone_queue_.push_back(
             PendingGone{now_ + feed_delay_.sample(now_), report.maker_order_id, true});
         ++stats_.orders_retired;
+    }
+}
+
+void Simulator::apply_model_fills(const MarketEvent& event) {
+    const Probe probe{this};
+    model_fills_.clear();
+    fill_model_.on_event(event, probe, model_fills_);
+
+    for (const ModelFill& filled : model_fills_) {
+        const auto tracked = live_orders_.find(filled.id);
+        if (tracked == live_orders_.end()) continue;
+
+        record_fill(filled.id, order_sides_[filled.id], filled.price, filled.quantity,
+                    tracked->second);
+
+        // The model owns the remaining quantity; when it stops reporting the
+        // order it is done with it.
+        if (fill_model_.queue_ahead(filled.id) == 0 && remaining_[filled.id] <= filled.quantity) {
+            live_orders_.erase(tracked);
+            order_sides_.erase(filled.id);
+            gone_queue_.push_back(PendingGone{now_ + feed_delay_.sample(now_), filled.id, true});
+            ++stats_.orders_retired;
+            remaining_.erase(filled.id);
+        } else {
+            remaining_[filled.id] = remaining_[filled.id] - filled.quantity;
+        }
     }
 }
 
@@ -122,7 +169,12 @@ void Simulator::release_orders(Time now) {
             continue;
         }
         order_sides_.erase(cancel.id);
-        book_.on_cancel(match::SeqNum{0}, cancel.id);
+        remaining_.erase(cancel.id);
+        if (fill_model_.uses_engine()) {
+            book_.on_cancel(match::SeqNum{0}, cancel.id);
+        } else {
+            fill_model_.on_removed(cancel.id);
+        }
         gone_queue_.push_back(PendingGone{now + feed_delay_.sample(now), cancel.id, false});
         ++stats_.orders_retired;
     }
@@ -131,20 +183,31 @@ void Simulator::release_orders(Time now) {
         const auto submit = pending_submits_.front();
         pending_submits_.pop_front();
 
-        book_.on_new_order(match::Order{submit.id, match::SeqNum{0}, submit.price,
-                                        submit.quantity, submit.side, match::TimeInForce::Gtc});
-
         // Record the queue depth ahead of it AT ENTRY. This is the number a
         // naive fill model assumes is zero, and capturing it here — rather
         // than reconstructing it later — is what makes the comparison in the
         // study a measurement rather than an estimate.
-        const auto ahead = book_.quantity_ahead(submit.id);
-        if (ahead.has_value()) {
-            live_orders_[submit.id] = *ahead;
+        if (fill_model_.uses_engine()) {
+            book_.on_new_order(match::Order{submit.id, match::SeqNum{0}, submit.price,
+                                            submit.quantity, submit.side,
+                                            match::TimeInForce::Gtc});
+            const auto ahead = book_.quantity_ahead(submit.id);
+            if (ahead.has_value()) {
+                live_orders_[submit.id] = *ahead;
+                order_sides_[submit.id] = submit.side;
+                remaining_[submit.id] = submit.quantity;
+            }
+            // If it has no queue position it filled instantly on arrival, and
+            // on_report has already accounted for it.
+        } else {
+            // A counterfactual model: the order stays OUT of the book, so the
+            // depth these models read is the historical depth, unperturbed.
+            const Probe probe{this};
+            fill_model_.on_placed(submit.id, submit.side, submit.price, submit.quantity, probe);
+            live_orders_[submit.id] = probe.depth_at(submit.price, submit.side);
             order_sides_[submit.id] = submit.side;
+            remaining_[submit.id] = submit.quantity;
         }
-        // If it has no queue position it filled instantly on arrival, and
-        // on_report has already accounted for it.
     }
 }
 

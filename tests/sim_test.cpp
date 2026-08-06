@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "match/types.hpp"
+#include "sim/fill_model.hpp"
 #include "sim/latency.hpp"
 #include "sim/portfolio.hpp"
 #include "sim/simulator.hpp"
@@ -78,7 +79,8 @@ TEST(Latency, OrderDelayKeepsAnOrderOutOfTheBookUntilItArrives) {
     OneShot strategy(Side::Buy, 100, 50);
     ZeroDelay feed;
     ConstantDelay order{millis(10)};
-    Simulator sim(strategy, feed, order, {});
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
 
     // Two-sided book so the strategy is called at all.
     sim.on_market_event(add(0, 1, Side::Buy, 99, 10));
@@ -97,7 +99,8 @@ TEST(Latency, FeedDelayMakesTheStrategySeeAStaleBook) {
     OneShot strategy(Side::Buy, 100, 50);
     ConstantDelay feed{millis(5)};
     ZeroDelay order;
-    Simulator sim(strategy, feed, order, {});
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
 
     sim.on_market_event(add(0, 1, Side::Buy, 99, 10));
     sim.on_market_event(add(1, 2, Side::Sell, 101, 10));
@@ -140,7 +143,8 @@ TEST(Injection, AnOrderBehindTheQueueDoesNotFillUntilTheQueueDrains) {
     OneShot strategy(Side::Buy, 100, 50);
     ZeroDelay feed;
     ZeroDelay order;
-    Simulator sim(strategy, feed, order, {});
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
 
     // 200 shares are already resting at the strategy's price when it arrives.
     sim.seed_level(Side::Buy, Price{100}, Quantity{200});
@@ -171,7 +175,8 @@ TEST(Injection, QueuePositionIsDestroyedByCancellationToo) {
     OneShot strategy(Side::Buy, 100, 50);
     ZeroDelay feed;
     ZeroDelay order;
-    Simulator sim(strategy, feed, order, {});
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
 
     sim.on_market_event(add(0, 1, Side::Buy, 100, 200));
     sim.on_market_event(add(1, 2, Side::Sell, 101, 10));
@@ -191,7 +196,8 @@ TEST(Injection, StrategyOrdersDoNotDisturbTheHistoricalBookTheyDoNotTouch) {
     OneShot strategy(Side::Buy, 90, 50);  // far from the touch, never fills
     ZeroDelay feed;
     ZeroDelay order;
-    Simulator sim(strategy, feed, order, {});
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
 
     sim.on_market_event(add(0, 1, Side::Buy, 100, 10));
     sim.on_market_event(add(1, 2, Side::Sell, 101, 10));
@@ -212,7 +218,8 @@ TEST(Leakage, TheViewIsAValueNotAWindowOntoTheLiveBook) {
     OneShot strategy(Side::Buy, 100, 50);
     ZeroDelay feed;
     ZeroDelay order;
-    Simulator sim(strategy, feed, order, {});
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
 
     sim.on_market_event(add(0, 1, Side::Buy, 99, 10));
     sim.on_market_event(add(1, 2, Side::Sell, 101, 10));
@@ -276,7 +283,8 @@ TEST(FixedOffsetMaker, QuotesBothSidesAroundTheMid) {
 
     ZeroDelay feed;
     ZeroDelay order;
-    Simulator sim(strategy, feed, order, {});
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
 
     sim.on_market_event(add(0, 1, Side::Buy, 100, 10));
     sim.on_market_event(add(1, 2, Side::Sell, 120, 10));
@@ -292,7 +300,8 @@ TEST(FixedOffsetMaker, DoesNotChurnItsQueuePositionWhenTheMidIsUnchanged) {
 
     ZeroDelay feed;
     ZeroDelay order;
-    Simulator sim(strategy, feed, order, {});
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
 
     sim.on_market_event(add(0, 1, Side::Buy, 100, 10));
     sim.on_market_event(add(1, 2, Side::Sell, 120, 10));
@@ -321,7 +330,8 @@ TEST(FixedOffsetMaker, ExposureLimitBindsDespiteOrderLatency) {
 
     ZeroDelay feed;
     ConstantDelay order{millis(1)};  // long enough for cancels to lag badly
-    Simulator sim(strategy, feed, order, {});
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
 
     sim.seed_level(Side::Sell, Price{200}, Quantity{100000});
     sim.on_market_event(add(0, 1, Side::Buy, 100, 100));

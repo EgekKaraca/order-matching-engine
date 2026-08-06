@@ -19,7 +19,7 @@ Phase 1 of 8. This section fills in from measured runs only.
 | 34-case conformance gate | ⏳ not yet run — needs Linux |
 | Worst-case throughput, P50 / P99 | ⏳ not measured |
 | **LOBSTER reconstruction** vs. the venue's published book | ✅ **top-of-book exact for 54,605 consecutive events; 99.90% of the session.** See the bound below. |
-| The fill-model gap | ⏳ not measured |
+| **The fill-model gap** | ⚠️ **first measurement taken — see below.** Directionally clear, but single-sample and with one model unvalidated. |
 
 ### What "report-stream correctness" does and does not mean
 
@@ -32,6 +32,44 @@ It is **not** `Verdict: VALID`, and this README will not say so until the harnes
 The verdict additionally requires the random-point book-state audit, the anti-cheat checks,
 and a timed run — all Linux-only. Only seed 23 is covered so far; the published hashes cover
 no other seed.
+
+### The result so far
+
+Identical strategy (passive maker joining the touch, 100 shares), identical data, identical
+latency, three fill models. AAPL 2012-06-21, 09:30–10:30, order latency 500 µs, feed latency
+100 µs:
+
+| Fill model | Fills | Spread capture | Mark-out @10s | Net PnL | Queue ahead (median) |
+|---|--:|--:|--:|--:|--:|
+| **A — naive** ("filled at the touch") | 1,118 | $467 | −$3,171 | **+$783** | 100 |
+| B — L2 probabilistic (estimated queue) | 159 | $434 | +$404 | +$568 | 100 |
+| **C — L3 exact** (real queue) | 908 | $1,075 | −$3,886 | **−$2,114** | 90 |
+
+**The strategy is profitable under the naive fill model and loss-making under the real one.**
+That is the single most useful sentence this project can produce, and it is a negative result
+about the strategy rather than a positive one — which is the point.
+
+`PnL_A > PnL_C` at every latency tested (0 to 100 ms). But three caveats, none of them
+optional:
+
+1. **The headline ratio is fragile.** `(PnL_A − PnL_C) / |PnL_A|` is 370% here, and it is
+   unstable precisely because `PnL_A` is small: at 100 µs latency both models lose money and
+   the ratio becomes meaningless. The dollar gap — **$2,897** — is the more honest figure.
+2. **Model B is not validated.** It fills a fifth as often as C and shows *positive*
+   mark-outs, which is not what a passive maker should show. It is either mis-implemented or
+   mis-parameterised, and it should not be quoted until that is resolved. A-vs-C is the whole
+   argument; B is a refinement.
+3. **One hour, one stock, one day.** The numbers are real. Their error bars are not estimated,
+   and a single point estimate is not a finding.
+
+An experiment-design trap worth recording, because the first run fell into it: quoting a fixed
+offset from the mid **measured nothing at all** (gap ≈ 0). AAPL in 2012 routinely ran a $0.61
+spread, so a $0.30 offset lands *inside* the spread where no queue exists — and with no queue,
+every fill model agrees by construction. The strategy has to **join the touch** for queue
+position to be a thing that can be modelled. A study that skipped this check would have
+reported "no gap" and been wrong.
+
+Reproduce with `build/studies/fill_model_study data/message_50.csv data/orderbook_50.csv`.
 
 ### The reconstruction claim, and its bound
 
