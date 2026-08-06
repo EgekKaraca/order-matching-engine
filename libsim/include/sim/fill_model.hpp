@@ -149,6 +149,29 @@ private:
 
 // --- B: queue position estimated from L2 depth --------------------------------
 
+// STATUS: EXPERIMENTAL — EXCLUDED FROM THE HEADLINE RESULT. Read this before
+// quoting any number this class produces.
+//
+// A partial correction toward C ought to land between A and C. This one does
+// not: it reports a HIGHER PnL than the naive model, and captures roughly 2.4x
+// the spread per fill that L3 exact does, which no queue-position model should.
+//
+// Two genuine defects have already been found and fixed here, so the remaining
+// anomaly is not obviously the same kind of thing:
+//   1. it filled only on trades landing exactly on its own price, ignoring a
+//      market that traded THROUGH the limit — a fivefold under-fill;
+//   2. it then over-corrected, treating a trade through the level as an
+//      ordinary queue advance rather than as the level being swept.
+//
+// It is left in the tree, unquoted, deliberately. The tempting next move is to
+// keep adjusting it until it falls between A and C — and that would be fitting
+// the model to the expected answer, which is a worse failure than not having
+// the model at all. Whoever picks this up should find the mechanism first and
+// let the number land where it lands.
+//
+// The project's own cut order puts model B first to go; A-vs-C is the whole
+// argument and does not depend on this.
+//
 // A reimplementation of the ProbQueueModel family from hftbacktest, which
 // exists precisely because L2 data cannot see queue position and must guess it.
 //
@@ -190,18 +213,37 @@ public:
         for (auto& [id, order] : orders_) {
             if (order.side != event.side) continue;
 
-            // A trade counts if it reached this order's price, not only if it
-            // landed exactly on it: a market that trades THROUGH a limit has
-            // traded against it. Requiring exact equality was under-filling
-            // this model by a factor of five relative to L3 exact, which made
-            // it look conservative when it was really just mis-specified.
-            // A cancellation, by contrast, only affects the queue at its own
-            // level, so that one does require an exact price match.
-            const bool relevant = is_trade ? match::crosses(order.price, event.price, order.side)
-                                           : order.price == event.price;
-            if (!relevant) continue;
+            // Three cases, and conflating them is what made this model wrong
+            // twice. Take a resting BUY at price P:
+            //
+            //   trade at P          consumes the queue at my own level, so it
+            //                       advances my position one-for-one;
+            //   trade BELOW P       a lower bid traded, which can only happen
+            //                       once everything at P was exhausted — so my
+            //                       level was swept on the way through and
+            //                       nothing can still be ahead of me;
+            //   trade ABOVE P       a better bid traded. My level was never
+            //                       touched. It must NOT advance my queue.
+            //
+            // The mirror holds for a sell. Using crosses() alone merged the
+            // first two cases and advanced the queue by the wrong amount; using
+            // equality alone dropped the second case entirely and under-filled
+            // this model fivefold.
+            const bool at_my_level = order.price == event.price;
+            const bool through_my_level =
+                !at_my_level && match::crosses(order.price, event.price, order.side);
+
+            if (is_trade && !at_my_level && !through_my_level) continue;
+            if (!is_trade && !at_my_level) continue;
 
             if (is_trade) {
+                if (through_my_level) {
+                    // Swept. Everything ahead is gone and so am I.
+                    order.ahead = 0.0;
+                    out.push_back(ModelFill{id, order.quantity, order.price});
+                    order.quantity.units = 0;
+                    continue;
+                }
                 // Trades consume the front of the queue, so they advance the
                 // estimate fully.
                 const double consumed = static_cast<double>(event.quantity.units);
@@ -238,7 +280,9 @@ public:
         return it == orders_.end() ? 0 : static_cast<match::AggregateQuantity>(it->second.ahead);
     }
 
-    const char* name() const override { return "B: L2 probabilistic (estimated queue)"; }
+    const char* name() const override {
+        return "B: L2 probabilistic (EXPERIMENTAL, excluded)";
+    }
 
 private:
     struct Resting {

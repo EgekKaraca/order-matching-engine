@@ -29,10 +29,12 @@
 //      reproduce this book byte for byte — is the gate between the two.
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "adapters/lobster.hpp"
@@ -80,6 +82,11 @@ struct Stats {
     std::size_t hidden = 0, halt = 0, cross = 0;
     std::size_t unknown_id = 0;
     std::size_t short_reduction = 0;
+    // Of the unknown ids, how many belonged to orders this replay HAD tracked
+    // and has since lost. Those are not data-bound events: they are the
+    // knock-on cost of the level-drain fallback, which takes from the front of
+    // a level and so can consume real tracked orders.
+    std::size_t unknown_but_previously_seen = 0;
     std::size_t parse_failures = 0;
     std::size_t trades = 0;
     // Aggressor-model diagnostics.
@@ -133,9 +140,12 @@ bool prefix_equal(const std::vector<std::int64_t>& a, const std::vector<std::int
 // Applies one message to one book under the given execution model. Extracted
 // so that two books running different models can be driven in lockstep by the
 // null-order-invariance check.
+std::unordered_set<std::uint64_t> seen_ids;
+
 void apply(Book& book, const lobster::Message& m, ExecutionModel model, Stats& stats) {
     switch (m.type) {
         case lobster::EventType::NewLimitOrder:
+            seen_ids.insert(m.order_id);
             // Resting directly rather than through the matching path: the
             // message file is the venue's post-match record, so an order
             // recorded as "new" did not trade on arrival.
@@ -204,6 +214,12 @@ void apply(Book& book, const lobster::Message& m, ExecutionModel model, Stats& s
                 //     replay bug rather than at the data.
                 if (!got) {
                     ++stats.unknown_id;
+                    if (seen_ids.count(m.order_id) != 0) ++stats.unknown_but_previously_seen;
+                    if (std::getenv("LOBSTER_DUMP_UNKNOWN") != nullptr) {
+                        std::fprintf(stderr, "unknown row=%zu type=%d id=%llu\n", stats.rows,
+                                     static_cast<int>(m.type),
+                                     static_cast<unsigned long long>(m.order_id));
+                    }
                 } else {
                     ++stats.short_reduction;
                 }
@@ -366,6 +382,9 @@ int main(int argc, char** argv) {
                 stats.unknown_id);
     std::printf("short reductions     : %zu  (order tracked but already short)\n",
                 stats.short_reduction);
+    std::printf("  of which previously tracked: %zu  (lost to the level-drain fallback,\n",
+                stats.unknown_but_previously_seen);
+    std::printf("                               not to LOBSTER's price-range filtering)\n");
     std::printf("parse failures       : %zu\n", stats.parse_failures);
     std::printf("trades printed       : %zu\n", stats.trades);
     if (model == ExecutionModel::Aggressor) {

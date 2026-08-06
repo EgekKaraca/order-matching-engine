@@ -124,9 +124,16 @@ Reproduce with `build/tools/lobster_oracle data/message_50.csv data/orderbook_50
 
 Cross-check: an independent Python implementation (`probes/lobster_oracle_check.py`, a
 level-aggregate dict book rather than a per-order L3 book through the engine) reproduces the
-same top-1/5/10 figures. It classifies 85 events as unknown-id where the C++ counts 91; the
-difference is bookkeeping in the fallback path, not book state, and is an open item rather
-than a settled one.
+same top-1/5/10 figures.
+
+It classifies 85 events as unknown-id where the C++ counts 91, and the six-event difference is
+now **fully accounted for**: exactly 6 of the C++'s 91 name an order it had previously tracked.
+When an unknown-id event drains a level, the C++ takes from the front of the queue and so
+removes real tracked orders; a later event naming one of them then finds it gone. The Python
+fallback decrements a level aggregate and never removes a tracked order, so it does not. That
+is a difference in fallback policy for liquidity the data cannot attribute — the message file
+does not say whose order left — and not a defect in either. Neither can be right, because the
+information is absent from the source.
 
 ## The caveat, stated up front
 

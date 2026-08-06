@@ -234,7 +234,10 @@ int main(int argc, char** argv) {
     const double pnl_c = results[2].pnl;
     const double gap = pnl_a == 0.0 ? 0.0 : (pnl_a - pnl_c) / std::abs(pnl_a);
 
-    std::printf("\nTHE GAP  (PnL_A - PnL_C) / |PnL_A|  =  %.1f%%\n", 100.0 * gap);
+    std::printf("\nTHE GAP  (PnL_A - PnL_C) / |PnL_A|  =  %.1f%%   (dollar gap $%.0f)\n",
+                100.0 * gap, pnl_a - pnl_c);
+    std::printf("Model B is EXPERIMENTAL and excluded: it reports a higher PnL than the\n");
+    std::printf("naive model, which a partial correction toward C cannot legitimately do.\n");
     std::printf("  A naive: $%.0f    B estimated: $%.0f    C L3 exact: $%.0f\n", pnl_a, pnl_b,
                 pnl_c);
 
@@ -293,6 +296,42 @@ int main(int argc, char** argv) {
         std::printf("%8u %9.1f%% %12.0f %12.0f %9.1f%% %s\n", size, 100.0 * fraction, ra.pnl,
                     rc.pnl, 100.0 * g,
                     fraction <= 0.10 ? "defensible" : "ASSUMPTION STRAINED");
+    }
+
+    // --- sensitivity to time of day -----------------------------------------
+    //
+    // The sample is 09:30-10:30, which is the least representative hour of the
+    // session: the open carries the widest spreads, the heaviest volume, and
+    // the most informed flow. Splitting it into quarters at least shows whether
+    // the result is an artefact of the first few minutes.
+    std::printf("\n=== how the gap varies with time of day ===\n");
+    std::printf("%-16s %8s %12s %12s %10s\n", "window", "events", "PnL_A", "PnL_C", "gap");
+    for (int quarter = 0; quarter < 4; ++quarter) {
+        const std::int64_t start_ns = (34200 + 900LL * quarter) * 1'000'000'000LL;
+        const std::int64_t end_ns = start_ns + 900LL * 1'000'000'000LL;
+
+        std::vector<sim::MarketEvent> window;
+        for (const auto& event : events) {
+            if (event.time.ns >= start_ns && event.time.ns < end_ns) window.push_back(event);
+        }
+        if (window.empty()) continue;
+
+        // Each window starts from the same published snapshot rather than from
+        // the previous window's end state. That is imperfect — the book has
+        // moved by then — but it keeps the four runs independent, and the
+        // alternative silently carries one window's inventory into the next.
+        sim::NaiveFill a;
+        sim::L3ExactFill c;
+        const auto ra = run(a, window, seed, offset, 500);
+        const auto rc = run(c, window, seed, offset, 500);
+        const double g = ra.pnl == 0.0 ? 0.0 : (ra.pnl - rc.pnl) / std::abs(ra.pnl);
+
+        char label[32];
+        std::snprintf(label, sizeof(label), "%02d:%02d-%02d:%02d", 9 + (30 + 15 * quarter) / 60,
+                      (30 + 15 * quarter) % 60, 9 + (45 + 15 * quarter) / 60,
+                      (45 + 15 * quarter) % 60);
+        std::printf("%-16s %8zu %12.0f %12.0f %9.1f%%\n", label, window.size(), ra.pnl, rc.pnl,
+                    100.0 * g);
     }
 
     std::printf("\nOne hour of one stock on one day. The numbers are real; their error\n");
