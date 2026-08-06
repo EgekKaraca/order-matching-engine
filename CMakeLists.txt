@@ -25,6 +25,7 @@ target_compile_options(match_warnings INTERFACE
   $<$<BOOL:${MATCH_WERROR}>:-Werror>)
 
 add_subdirectory(libmatch)
+add_subdirectory(tools)
 
 if(MATCH_BUILD_TESTS)
   enable_testing()
