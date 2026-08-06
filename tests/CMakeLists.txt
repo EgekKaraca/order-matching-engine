@@ -15,6 +15,7 @@ include(GoogleTest)
 add_executable(match_tests
   types_test.cpp
   map_book_test.cpp
+  property_test.cpp
   canonical_test.cpp)
 
 target_link_libraries(match_tests PRIVATE match match_warnings GTest::gtest_main)
