@@ -470,6 +470,66 @@ TEST_F(BookTest, ReduceOfANonRestingOrderRemovesNothing) {
     EXPECT_TRUE(lines().empty()) << "reduce() emits no report — the caller reports";
 }
 
+// --- level-granularity consumption -------------------------------------------
+// The fallback for replaying liquidity whose arrival was never captured.
+
+TEST_F(BookTest, ConsumeAtTakesFromTheFrontOfTheQueue) {
+    add(1, Side::Buy, 100, 10);
+    add(2, Side::Buy, 100, 10);
+    add(3, Side::Buy, 100, 10);
+
+    EXPECT_EQ(book_.consume_at(Side::Buy, Price{100}, Quantity{15}), Quantity{15});
+    EXPECT_TRUE(book_.validate());
+    EXPECT_EQ(book_.depth_at(Price{100}, Side::Buy), 15u);
+    clear();
+
+    // Order 1 is gone entirely, order 2 is left with 5 and still leads.
+    add(4, Side::Sell, 100, 5);
+    EXPECT_EQ(lines(), (Lines{"0,3,1,4,100,5", "1,3,100,5,2,4"}));
+}
+
+TEST_F(BookTest, ConsumeAtClampsToTheLevelAndEmptiesIt) {
+    add(1, Side::Buy, 100, 10);
+    add(2, Side::Buy, 99, 10);
+
+    EXPECT_EQ(book_.consume_at(Side::Buy, Price{100}, Quantity{999}), Quantity{10});
+    EXPECT_TRUE(book_.validate());
+    EXPECT_EQ(book_.best_bid(), Price{99}) << "the emptied level must not linger";
+}
+
+TEST_F(BookTest, ConsumeAtAnAbsentLevelTakesNothing) {
+    add(1, Side::Buy, 100, 10);
+    EXPECT_EQ(book_.consume_at(Side::Buy, Price{50}, Quantity{10}), Quantity{0});
+    EXPECT_EQ(book_.consume_at(Side::Sell, Price{100}, Quantity{10}), Quantity{0})
+        << "the wrong side is not the same level";
+    EXPECT_EQ(book_.depth_at(Price{100}, Side::Buy), 10u);
+}
+
+TEST_F(BookTest, TopLevelsReturnsBestFirstAndAggregates) {
+    add(1, Side::Buy, 100, 10);
+    add(2, Side::Buy, 102, 20);
+    add(3, Side::Buy, 101, 30);
+    add(4, Side::Buy, 102, 5);  // same level as order 2
+
+    MapBook<Sink>::LevelView levels[4]{};
+    ASSERT_EQ(book_.top_levels(Side::Buy, levels, 4), 3u);
+
+    EXPECT_EQ(levels[0].price, Price{102});
+    EXPECT_EQ(levels[0].quantity, 25u);  // 20 + 5
+    EXPECT_EQ(levels[1].price, Price{101});
+    EXPECT_EQ(levels[2].price, Price{100});
+}
+
+TEST_F(BookTest, TopLevelsStopsAtTheRequestedDepth) {
+    for (std::uint64_t i = 0; i < 10; ++i) {
+        add(i + 1, Side::Sell, 100 + std::int64_t(i), 10);
+    }
+    MapBook<Sink>::LevelView levels[3]{};
+    ASSERT_EQ(book_.top_levels(Side::Sell, levels, 3), 3u);
+    EXPECT_EQ(levels[0].price, Price{100});  // asks: lowest first
+    EXPECT_EQ(levels[2].price, Price{102});
+}
+
 // --- price domain ------------------------------------------------------------
 
 TEST_F(BookTest, HandlesPricesNearTheRepresentationalCeiling) {

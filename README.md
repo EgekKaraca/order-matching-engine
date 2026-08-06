@@ -18,7 +18,7 @@ Phase 1 of 8. This section fills in from measured runs only.
 | Benchmark **verdict** (`flash1-dev/matching-engine-benchmark`, arXiv:2606.01183) | ⏳ not yet run — needs Linux |
 | 34-case conformance gate | ⏳ not yet run — needs Linux |
 | Worst-case throughput, P50 / P99 | ⏳ not measured |
-| LOBSTER reconstruction bound | ⏳ probed in Python, not yet in C++ |
+| **LOBSTER reconstruction** vs. the venue's published book | ✅ **top-of-book exact for 54,605 consecutive events; 99.90% of the session.** See the bound below. |
 | The fill-model gap | ⏳ not measured |
 
 ### What "report-stream correctness" does and does not mean
@@ -32,6 +32,36 @@ It is **not** `Verdict: VALID`, and this README will not say so until the harnes
 The verdict additionally requires the random-point book-state audit, the anti-cheat checks,
 and a timed run — all Linux-only. Only seed 23 is covered so far; the published hashes cover
 no other seed.
+
+### The reconstruction claim, and its bound
+
+Replaying LOBSTER's AAPL 2012-06-21 level-50 message file through this engine and diffing the
+reconstructed book against LOBSTER's own published orderbook file, **every row**, 91,996 events:
+
+| Depth compared | Exact match |
+|---|--:|
+| Top of book | **99.90%** (91,906 / 91,996) |
+| Top 5 levels | 98.84% |
+| Top 10 levels | 97.49% |
+| **All 50 levels** | **2.84%** |
+
+Longest unbroken run of exact top-of-book agreement: **54,605 consecutive events**, roughly 36
+minutes of trading. First divergence at row 54,606.
+
+**So the claim is a top-of-book oracle, not a full-depth one**, and the 2.84% row is left in
+this table deliberately: it is the number that shows why. LOBSTER's message file carries only
+events inside the requested price range, so liquidity surfacing from outside the window is
+referenced by executions and cancels whose arrival was never captured — 91 such events here.
+That is documented LOBSTER behaviour rather than a replay defect, and it is why the level-50
+sample is used: the level-10 file diverges by row 439 and matches on 0.79% of rows.
+
+Reproduce with `build/tools/lobster_oracle data/message_50.csv data/orderbook_50.csv`.
+
+Cross-check: an independent Python implementation (`probes/lobster_oracle_check.py`, a
+level-aggregate dict book rather than a per-order L3 book through the engine) reproduces the
+same top-1/5/10 figures. It classifies 85 events as unknown-id where the C++ counts 91; the
+difference is bookkeeping in the fallback path, not book state, and is an open item rather
+than a settled one.
 
 ## The caveat, stated up front
 

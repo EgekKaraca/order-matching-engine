@@ -147,7 +147,35 @@ public:
         return removed;
     }
 
+    // Consumes `qty` from the front of one price level, FIFO, without naming
+    // an order. Returns the quantity actually removed.
+    //
+    // Replay needs this because a historical feed can reference liquidity whose
+    // arrival was never captured — LOBSTER's message file only carries events
+    // inside the requested price range, and a book seeded from a depth snapshot
+    // has levels with no per-order identity at all. Taking from the front is
+    // the right fallback precisely because those orders are the oldest ones
+    // present, so FIFO puts them exactly where they belong.
+    //
+    // Like reduce(), this emits no report: the caller knows whether the
+    // liquidity left as a cancel or as a fill.
+    Quantity consume_at(Side side, Price price, Quantity qty) {
+        return side == Side::Buy ? consume_in(bids_, price, qty) : consume_in(asks_, price, qty);
+    }
+
     // --- audit queries -----------------------------------------------------
+
+    struct LevelView {
+        Price price{};
+        AggregateQuantity quantity{};
+    };
+
+    // Fills `out` with up to `max` price levels, best first, and returns how
+    // many were written. Used to diff the reconstructed book against a venue's
+    // published depth snapshot.
+    std::size_t top_levels(Side side, LevelView* out, std::size_t max) const {
+        return side == Side::Buy ? copy_levels(bids_, out, max) : copy_levels(asks_, out, max);
+    }
     // These read the live book, never a shadow. An empty level is erased the
     // moment it empties, so a dead best price can never be observed here.
 
@@ -266,6 +294,40 @@ private:
         level.total -= loc.node->remaining.units;
         level.orders.erase(loc.node);
         if (level.orders.empty()) levels.erase(level_it);
+    }
+
+    template <typename Levels>
+    Quantity consume_in(Levels& levels, Price price, Quantity qty) {
+        const auto level_it = levels.find(price);
+        if (level_it == levels.end()) return Quantity{0};
+
+        Level& level = level_it->second;
+        Quantity removed{0};
+        while (qty && !level.orders.empty()) {
+            RestingOrder& front = level.orders.front();
+            const Quantity take{std::min(qty.units, front.remaining.units)};
+
+            qty -= take;
+            removed += take;
+            front.remaining -= take;
+            level.total -= take.units;
+
+            if (front.remaining) break;
+            index_.erase(front.id);
+            level.orders.pop_front();
+        }
+        if (level.orders.empty()) levels.erase(level_it);
+        return removed;
+    }
+
+    template <typename Levels>
+    static std::size_t copy_levels(const Levels& levels, LevelView* out, std::size_t max) {
+        std::size_t n = 0;
+        for (const auto& [price, level] : levels) {
+            if (n == max) break;
+            out[n++] = LevelView{price, level.total};
+        }
+        return n;
     }
 
     // Decrements one node and its level total together — the two must never
