@@ -88,19 +88,25 @@ void Simulator::on_market_event(const MarketEvent& event) {
 }
 
 void Simulator::record_fill(match::OrderId id, match::Side side, match::Price price,
-                            match::Quantity quantity, match::AggregateQuantity ahead_at_entry) {
+                            match::Quantity quantity, match::AggregateQuantity ahead_at_entry,
+                            bool maker) {
     Fill fill;
     fill.time = now_;
     fill.id = id;
     fill.side = side;
     fill.price = price;
     fill.quantity = quantity;
-    fill.maker = true;  // it was resting, so it provided liquidity
+    fill.maker = maker;
     fill.queue_ahead_at_entry = ahead_at_entry;
 
     portfolio_.apply(fill);
     fills_.push_back(fill);
     ++stats_.strategy_fills;
+    if (maker) {
+        ++stats_.maker_fills;
+    } else {
+        ++stats_.taker_fills;
+    }
 
     // The strategy learns about it only after feed latency — a fill report is
     // a message from the venue like any other.
@@ -110,13 +116,23 @@ void Simulator::record_fill(match::OrderId id, match::Side side, match::Price pr
 void Simulator::on_report(const match::Report& report) {
     if (report.type != match::ReportType::Trade) return;
 
-    // Only the strategy's own fills are of interest; the historical crowd's
-    // trades are scenery.
+    // The strategy as the AGGRESSOR. A marketable order trades inside
+    // on_new_order, before it could be registered as live, so it is recognised
+    // through in_flight_ instead. Queue ahead is zero by definition: a taker
+    // does not queue, which is exactly what it pays the spread for.
+    if (in_flight_active_ && report.taker_order_id == in_flight_) {
+        record_fill(in_flight_, order_sides_[in_flight_], report.price, report.quantity, 0,
+                    /*maker=*/false);
+        return;
+    }
+
+    // Otherwise only the strategy's own resting orders are of interest; the
+    // historical crowd's trades are scenery.
     const auto maker = live_orders_.find(report.maker_order_id);
     if (maker == live_orders_.end()) return;
 
     record_fill(report.maker_order_id, order_sides_[report.maker_order_id], report.price,
-                report.quantity, maker->second);
+                report.quantity, maker->second, /*maker=*/true);
 
     // If the order is now gone, stop tracking it. The engine has already
     // removed it; this only keeps the mirror tidy.
@@ -139,7 +155,7 @@ void Simulator::apply_model_fills(const MarketEvent& event) {
         if (tracked == live_orders_.end()) continue;
 
         record_fill(filled.id, order_sides_[filled.id], filled.price, filled.quantity,
-                    tracked->second);
+                    tracked->second, /*maker=*/true);
 
         // The model owns the remaining quantity; when it stops reporting the
         // order it is done with it.
@@ -187,6 +203,25 @@ void Simulator::release_orders(Time now) {
         // naive fill model assumes is zero, and capturing it here — rather
         // than reconstructing it later — is what makes the comparison in the
         // study a measurement rather than an estimate.
+        // A marketable order always goes through the engine, whatever the fill
+        // model is. There is no queue to model when you take liquidity — the
+        // three models agree by construction — so routing it through the real
+        // book is both correct and the only way to know what it actually got.
+        if (submit.tif == match::TimeInForce::Ioc) {
+            order_sides_[submit.id] = submit.side;
+            in_flight_ = submit.id;
+            in_flight_active_ = true;
+            book_.on_new_order(match::Order{submit.id, match::SeqNum{0}, submit.price,
+                                            submit.quantity, submit.side,
+                                            match::TimeInForce::Ioc});
+            in_flight_active_ = false;
+            order_sides_.erase(submit.id);
+            // IOC never rests, so it is retired the moment it is done.
+            gone_queue_.push_back(PendingGone{now + feed_delay_.sample(now), submit.id, true});
+            ++stats_.orders_retired;
+            continue;
+        }
+
         if (fill_model_.uses_engine()) {
             book_.on_new_order(match::Order{submit.id, match::SeqNum{0}, submit.price,
                                             submit.quantity, submit.side,
@@ -282,7 +317,7 @@ void Simulator::schedule_from_gate(Time decided_at) {
     for (const auto& submit : gate_.submits()) {
         pending_submits_.push_back(PendingSubmit{decided_at + order_delay_.sample(decided_at),
                                                  submit.side, submit.price, submit.quantity,
-                                                 submit.id});
+                                                 submit.id, submit.tif});
         ++stats_.strategy_submits;
     }
     for (const match::OrderId id : gate_.cancels()) {

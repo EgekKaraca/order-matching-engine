@@ -154,6 +154,37 @@ Where that starts to bite is measured, not asserted — the study reports how th
 with order size as a fraction of level depth. The paradigm that removes the assumption entirely
 is agent-based simulation ([ABIDES](https://github.com/jpmorganchase/abides-jpmc-public)).
 
+## Using it as a backtester
+
+```bash
+build/studies/backtest_runner data/message_50.csv data/orderbook_50.csv \
+    --strategy taker --fill-model l3 --order-latency-us 500 --equity-csv /tmp/equity.csv
+```
+
+Two strategies ship, deliberately opposite in every respect, because a framework
+shaped by one strategy has that strategy's assumptions baked into it:
+
+| | `maker` | `taker` |
+|---|---|---|
+| Liquidity | provides | consumes |
+| Spread | earns | pays |
+| Fees | collects the rebate | pays the fee |
+| Risk | flat inventory | directional |
+| Killed by | an optimistic **fill** assumption | an optimistic **cost** assumption |
+
+Reported per run: fills split passive/aggressive, shares, round trips, turnover, max
+position, time in market, net PnL, max drawdown on the mark-to-market curve, fees, hit
+rate, average mark-out, and an annualised Sharpe — which the tool itself labels as an
+~1700× extrapolation from one intraday hour, because it is.
+
+### What this is not
+
+A **single-instrument execution backtester**. One symbol, one session, no market impact,
+no portfolio, no risk engine, no corporate actions, no parameter search. It answers
+"would this order have filled, and what did that cost" — narrowly and with an external
+oracle behind it. It is not a competitor to Lean or Nautilus and would lose that
+comparison on breadth.
+
 ## Layout
 
 ```

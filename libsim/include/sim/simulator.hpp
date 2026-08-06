@@ -52,6 +52,8 @@ struct SimulatorStats {
     std::size_t strategy_submits = 0;
     std::size_t strategy_cancels = 0;
     std::size_t strategy_fills = 0;
+    std::size_t maker_fills = 0;
+    std::size_t taker_fills = 0;
     std::size_t rejected_cancels = 0;
     std::size_t orders_retired = 0;
     std::size_t callbacks = 0;
@@ -99,6 +101,7 @@ private:
         match::Price price;
         match::Quantity quantity;
         match::OrderId id;
+        match::TimeInForce tif;
     };
     struct PendingCancel {
         Time arrival;
@@ -132,7 +135,8 @@ private:
 
     void on_report(const match::Report& report);
     void record_fill(match::OrderId id, match::Side side, match::Price price,
-                     match::Quantity quantity, match::AggregateQuantity ahead_at_entry);
+                     match::Quantity quantity, match::AggregateQuantity ahead_at_entry,
+                     bool maker);
     void apply_model_fills(const MarketEvent& event);
     void deliver_due(Time now);
     void release_orders(Time now);
@@ -155,6 +159,11 @@ private:
     SimulatorStats stats_;
 
     Time now_{};
+    // The strategy order currently being submitted, if any. A marketable order
+    // trades during on_new_order, before it could be registered as live, so
+    // its taker-side fills are recognised through this.
+    match::OrderId in_flight_{};
+    bool in_flight_active_ = false;
     std::uint64_t next_seed_id_ = 1ULL << 60;
 
     std::deque<PendingSubmit> pending_submits_;

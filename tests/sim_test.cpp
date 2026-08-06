@@ -11,6 +11,7 @@
 #include "match/types.hpp"
 #include "sim/fill_model.hpp"
 #include "sim/latency.hpp"
+#include "sim/performance.hpp"
 #include "sim/portfolio.hpp"
 #include "sim/simulator.hpp"
 #include "sim/strategies/fixed_offset_maker.hpp"
@@ -207,6 +208,111 @@ TEST(Injection, StrategyOrdersDoNotDisturbTheHistoricalBookTheyDoNotTouch) {
     EXPECT_EQ(sim.portfolio().position(), 0);
 }
 
+// --- taking liquidity --------------------------------------------------------
+
+// A strategy that crosses the spread once, so the taker path can be driven
+// deterministically.
+class OneShotTaker : public Strategy {
+public:
+    OneShotTaker(Side side, std::int64_t limit, std::uint32_t qty)
+        : side_(side), limit_(limit), qty_(qty) {}
+
+    void on_book(const BookView& book, OrderGate& gate) override {
+        // Wait for a two-sided book. Crossing into an empty opposite side is
+        // not a test of anything — the order simply expires.
+        if (done_ || !book.two_sided()) return;
+        done_ = true;
+        id = gate.take(side_, Price{limit_}, Quantity{qty_});
+    }
+
+    const char* name() const override { return "one-shot taker"; }
+    match::OrderId id{};
+
+private:
+    Side side_;
+    std::int64_t limit_;
+    std::uint32_t qty_;
+    bool done_ = false;
+};
+
+TEST(Taker, CrossesTheSpreadAndFillsImmediately) {
+    OneShotTaker strategy(Side::Buy, 101, 30);
+    ZeroDelay feed;
+    ZeroDelay order;
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
+
+    sim.on_market_event(add(0, 1, Side::Buy, 99, 10));
+    sim.on_market_event(add(1, 2, Side::Sell, 101, 50));
+
+    // The order was decided on the second event and arrives on the third,
+    // where it lifts the resting offer without ever queueing.
+    sim.on_market_event(add(2, 3, Side::Sell, 102, 10));
+
+    EXPECT_EQ(sim.stats().taker_fills, 1u);
+    EXPECT_EQ(sim.stats().maker_fills, 0u);
+    ASSERT_EQ(sim.fills().size(), 1u);
+    EXPECT_FALSE(sim.fills().front().maker) << "a crossing order provides no liquidity";
+    EXPECT_EQ(sim.fills().front().price, Price{101}) << "pays the resting maker's price";
+    EXPECT_EQ(sim.fills().front().quantity, Quantity{30});
+    EXPECT_EQ(sim.fills().front().queue_ahead_at_entry, 0u) << "a taker never queues";
+    EXPECT_EQ(sim.portfolio().position(), 30);
+}
+
+TEST(Taker, PaysTheTakerFeeRatherThanEarningTheRebate) {
+    OneShotTaker strategy(Side::Buy, 101, 10);
+    ZeroDelay feed;
+    ZeroDelay order;
+    L3ExactFill fill_model;
+    SimulatorConfig config;
+    config.fees = FeeSchedule{-2, 3};  // rebate for making, fee for taking
+    Simulator sim(strategy, feed, order, fill_model, config);
+
+    sim.on_market_event(add(0, 1, Side::Buy, 99, 10));
+    sim.on_market_event(add(1, 2, Side::Sell, 101, 50));
+    sim.on_market_event(add(2, 3, Side::Sell, 102, 10));
+
+    ASSERT_EQ(sim.stats().taker_fills, 1u);
+    EXPECT_EQ(sim.portfolio().fees_paid(), 30) << "10 shares at 3 per share, paid not earned";
+}
+
+TEST(Taker, DoesNotRestItsUnfilledRemainder) {
+    // Wants 100 but only 20 is offered inside its limit. The rest is dropped:
+    // a taker that quietly rested its remainder would become a maker, and
+    // would start earning a spread it never waited for.
+    OneShotTaker strategy(Side::Buy, 101, 100);
+    ZeroDelay feed;
+    ZeroDelay order;
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
+
+    sim.on_market_event(add(0, 1, Side::Buy, 99, 10));
+    sim.on_market_event(add(1, 2, Side::Sell, 101, 20));
+    sim.on_market_event(add(2, 3, Side::Sell, 105, 10));
+
+    EXPECT_EQ(sim.portfolio().position(), 20);
+    // Nothing of the strategy's is resting: the book's best bid is still the
+    // historical one.
+    sim.on_market_event(execute(3, 1, Side::Buy, 99, 10));
+    EXPECT_EQ(sim.stats().maker_fills, 0u);
+}
+
+TEST(Taker, RespectsItsLimitPrice) {
+    // Only offers above the limit exist, so nothing should fill.
+    OneShotTaker strategy(Side::Buy, 100, 50);
+    ZeroDelay feed;
+    ZeroDelay order;
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
+
+    sim.on_market_event(add(0, 1, Side::Buy, 99, 10));
+    sim.on_market_event(add(1, 2, Side::Sell, 105, 50));
+    sim.on_market_event(add(2, 3, Side::Sell, 106, 10));
+
+    EXPECT_EQ(sim.stats().taker_fills, 0u);
+    EXPECT_EQ(sim.portfolio().position(), 0);
+}
+
 // --- leakage discipline ------------------------------------------------------
 
 TEST(Leakage, TheViewIsAValueNotAWindowOntoTheLiveBook) {
@@ -271,6 +377,106 @@ TEST(Portfolio, InventoryIsMarkedToTheMidNotTheTouch) {
     // Mid of 105 (doubled: 210). Bought 10 at 100, so 50 of unrealised gain.
     EXPECT_EQ(p.pnl_x2(210), 2 * -1000 + 10 * 210);
     EXPECT_EQ(p.pnl_x2(210) / 2, 50);
+}
+
+// --- performance statistics --------------------------------------------------
+
+namespace {
+std::vector<std::pair<Time, std::int64_t>> flat_mids(std::int64_t mid_x2, int count) {
+    std::vector<std::pair<Time, std::int64_t>> mids;
+    for (int i = 0; i < count; ++i) mids.emplace_back(Time{seconds(i).count}, mid_x2);
+    return mids;
+}
+}  // namespace
+
+TEST(Performance, EquityTracksMarkToMarketNotRealisedPnl) {
+    // Buy 10 at 100 and hold. With the mid at 110 the position is worth 100
+    // more than it cost, and that shows up in equity immediately — a curve
+    // built on realised PnL only would sit flat at zero and hide the risk
+    // being carried.
+    const std::vector<Fill> fills{
+        Fill{Time{0}, match::OrderId{1}, Side::Buy, Price{100}, Quantity{10}, true, 0}};
+    const auto mids = flat_mids(220, 5);  // mid 110
+
+    const PerformanceAnalyzer analyzer(fills, mids);
+    const auto curve = analyzer.equity_curve(seconds(1));
+
+    ASSERT_FALSE(curve.empty());
+    EXPECT_EQ(curve.back().position, 10);
+    EXPECT_DOUBLE_EQ(curve.back().equity, 100.0);  // 10 * (110 - 100)
+}
+
+TEST(Performance, DrawdownIsMeasuredOnMarkToMarket) {
+    // Bought at 100; the mid then falls to 90 before recovering. The trough is
+    // a real drawdown even though nothing was ever sold.
+    const std::vector<Fill> fills{
+        Fill{Time{0}, match::OrderId{1}, Side::Buy, Price{100}, Quantity{10}, true, 0}};
+    std::vector<std::pair<Time, std::int64_t>> mids{
+        {Time{seconds(0).count}, 200},  // mid 100, equity 0
+        {Time{seconds(1).count}, 180},  // mid  90, equity -100
+        {Time{seconds(2).count}, 200},  // mid 100, equity 0
+    };
+
+    const PerformanceAnalyzer analyzer(fills, mids);
+    const auto report = analyzer.analyse(seconds(1), seconds(1));
+    EXPECT_DOUBLE_EQ(report.max_drawdown, 100.0);
+    EXPECT_DOUBLE_EQ(report.net_pnl, 0.0) << "ends flat, but the drawdown happened";
+}
+
+TEST(Performance, TurnoverAndRoundTripsCountBothSides) {
+    const std::vector<Fill> fills{
+        Fill{Time{0}, match::OrderId{1}, Side::Buy, Price{100}, Quantity{10}, true, 0},
+        Fill{Time{seconds(1).count}, match::OrderId{2}, Side::Sell, Price{100}, Quantity{4}, true,
+             0}};
+    const auto mids = flat_mids(200, 3);
+
+    const PerformanceAnalyzer analyzer(fills, mids);
+    const auto report = analyzer.analyse(seconds(1), seconds(1));
+
+    EXPECT_EQ(report.shares_traded, 14);
+    EXPECT_EQ(report.round_trips, 4) << "only the matched shares are a round trip";
+    EXPECT_DOUBLE_EQ(report.turnover, 1400.0);
+}
+
+TEST(Performance, HitRateCountsFillsThatWereRightAfterwards) {
+    // A buy at 100 with the mid at 110 a second later is a good fill; a sell
+    // at the same price into the same rise is a bad one.
+    const std::vector<Fill> fills{
+        Fill{Time{0}, match::OrderId{1}, Side::Buy, Price{100}, Quantity{1}, true, 0},
+        Fill{Time{0}, match::OrderId{2}, Side::Sell, Price{100}, Quantity{1}, true, 0}};
+    std::vector<std::pair<Time, std::int64_t>> mids{
+        {Time{0}, 200},
+        {Time{seconds(1).count}, 220},
+        {Time{seconds(2).count}, 220},
+    };
+
+    const PerformanceAnalyzer analyzer(fills, mids);
+    const auto report = analyzer.analyse(seconds(1), seconds(1));
+    EXPECT_DOUBLE_EQ(report.hit_rate, 0.5);
+    EXPECT_DOUBLE_EQ(report.avg_markout, 0.0) << "the two cancel exactly";
+}
+
+TEST(Performance, TimeInMarketIgnoresFlatSamples) {
+    const std::vector<Fill> fills{
+        Fill{Time{seconds(2).count}, match::OrderId{1}, Side::Buy, Price{100}, Quantity{10}, true,
+             0}};
+    const auto mids = flat_mids(200, 4);
+
+    const PerformanceAnalyzer analyzer(fills, mids);
+    const auto report = analyzer.analyse(seconds(1), seconds(1));
+    // Flat for the first two samples of four.
+    EXPECT_DOUBLE_EQ(report.time_in_market, 0.5);
+}
+
+TEST(Performance, AConstantPnlStreamHasNoVarianceAndNoSharpe) {
+    // Guards against a divide-by-zero producing an infinite Sharpe, which is
+    // the most embarrassing number a backtester can print.
+    const std::vector<Fill> fills;
+    const auto mids = flat_mids(200, 10);
+    const PerformanceAnalyzer analyzer(fills, mids);
+    const auto report = analyzer.analyse(seconds(1), seconds(1));
+    EXPECT_DOUBLE_EQ(report.return_stdev, 0.0);
+    EXPECT_DOUBLE_EQ(report.sharpe_annualised, 0.0);
 }
 
 // --- the strategy ------------------------------------------------------------

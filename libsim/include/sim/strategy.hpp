@@ -93,14 +93,28 @@ public:
         match::Price price;
         match::Quantity quantity;
         match::OrderId id;
+        match::TimeInForce tif;
     };
 
-    // Returns the id the order will have, so the strategy can track and cancel
-    // it — but the order does not exist yet, and will not until it arrives.
-    match::OrderId submit(match::Side side, match::Price price, match::Quantity quantity) {
+    // Post a resting limit order. Returns the id it will have, so the strategy
+    // can track and cancel it — but the order does not exist yet, and will not
+    // until it arrives.
+    match::OrderId submit(match::Side side, match::Price price, match::Quantity quantity,
+                          match::TimeInForce tif = match::TimeInForce::Gtc) {
         const match::OrderId id{next_id_++};
-        submits_.push_back(Submit{side, price, quantity, id});
+        submits_.push_back(Submit{side, price, quantity, id, tif});
         return id;
+    }
+
+    // Cross the spread: match against whatever is resting up to `limit`, and
+    // drop the remainder rather than joining the book.
+    //
+    // A taker pays the spread instead of earning it, and pays the taker fee
+    // instead of collecting the maker rebate — but it fills NOW, with no queue
+    // to wait in. That trade-off is the other half of trading, and a system
+    // that cannot express it is a market-making rig, not a backtester.
+    match::OrderId take(match::Side side, match::Price limit, match::Quantity quantity) {
+        return submit(side, limit, quantity, match::TimeInForce::Ioc);
     }
 
     void cancel(match::OrderId id) { cancels_.push_back(id); }
