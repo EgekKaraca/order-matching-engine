@@ -43,28 +43,52 @@ sha256() {
   else shasum -a 256 "$1" | cut -d' ' -f1; fi
 }
 
+# When the adapter is built, every scenario is run twice: once through the C++
+# engine directly, and once through dlopen + the C ABI exactly as the harness
+# drives it. The second run is what catches an adapter-only defect — a
+# mistranslated side byte, an unset report field — here rather than on the
+# Linux box with the harness in the loop confusing the diagnosis.
+ABI_REPLAY="$ROOT/build/tools/abi_replay"
+ADAPTER="$ROOT/build/adapters/ome_adapter.so"
+run_abi=0
+if [[ -x "$ABI_REPLAY" && -f "$ADAPTER" ]]; then run_abi=1; fi
+
 failures=0
 for scenario in "${SCENARIOS[@]}"; do
   workload="$WORK/$scenario.bin"
-  output="$WORK/$scenario.txt"
-
   [[ -f "$workload" ]] || "$GEN" "$scenario" "$workload" "$COUNT" "$SEED" >/dev/null
-  "$REPLAY" "$workload" "$output" >"$WORK/$scenario.log"
 
   want=$(grep "${scenario}_seed${SEED}_count${COUNT}_reports.txt" "$REFERENCE" | cut -d' ' -f1)
-  got=$(sha256 "$output")
 
-  if [[ "$want" == "$got" ]]; then
-    printf 'PASS  %-12s %s\n' "$scenario" "$got"
-  else
-    printf 'FAIL  %-12s\n  expected %s\n  actual   %s\n' "$scenario" "$want" "$got"
-    failures=$((failures + 1))
+  check() {  # <label> <output-file>
+    local got
+    got=$(sha256 "$2")
+    if [[ "$want" == "$got" ]]; then
+      printf 'PASS  %-12s %-9s %s\n' "$scenario" "$1" "$got"
+    else
+      printf 'FAIL  %-12s %s\n  expected %s\n  actual   %s\n' "$scenario" "$1" "$want" "$got"
+      failures=$((failures + 1))
+    fi
+  }
+
+  "$REPLAY" "$workload" "$WORK/$scenario.txt" >"$WORK/$scenario.log"
+  check engine "$WORK/$scenario.txt"
+
+  if (( run_abi )); then
+    "$ABI_REPLAY" "$ADAPTER" "$workload" "$WORK/$scenario.abi.txt" >"$WORK/$scenario.abi.log"
+    check "c-abi" "$WORK/$scenario.abi.txt"
   fi
 done
 
 echo
 if (( failures == 0 )); then
-  echo "All ${#SCENARIOS[@]} scenarios reproduce the published byte-identical consensus at seed $SEED."
+  if (( run_abi )); then
+    echo "All ${#SCENARIOS[@]} scenarios reproduce the published byte-identical consensus at seed $SEED,"
+    echo "through both the C++ engine and the dlopened C ABI adapter."
+  else
+    echo "All ${#SCENARIOS[@]} scenarios reproduce the published byte-identical consensus at seed $SEED."
+    echo "(The C ABI adapter was not built — configure with -DMATCH_BENCHMARK_DIR to include it.)"
+  fi
   echo "This is the report-stream half only. The verdict needs the Linux harness."
 else
   echo "$failures scenario(s) diverged."
