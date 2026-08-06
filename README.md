@@ -10,7 +10,8 @@ position, once order latency and adverse selection are accounted for.
 
 ## Status
 
-Phase 1 of 8. This section fills in from measured runs only.
+Phases 0-1 and 5-7 built; the harness verdict awaits a Linux box. Filled in from
+measured runs only.
 
 | Claim | Status |
 |---|---|
@@ -42,7 +43,7 @@ latency, three fill models. AAPL 2012-06-21, 09:30–10:30, order latency 500 µ
 | Fill model | Fills | Spread capture | Mark-out @10s | Net PnL | Queue ahead (median) |
 |---|--:|--:|--:|--:|--:|
 | **A — naive** ("filled at the touch") | 1,118 | $467 | −$3,171 | **+$783** | 100 |
-| B — L2 probabilistic (estimated queue) | 159 | $434 | +$404 | +$568 | 100 |
+| B — L2 probabilistic *(experimental, excluded)* | 711 | $2,026 | −$1,010 | +$2,403 | 100 |
 | **C — L3 exact** (real queue) | 908 | $1,075 | −$3,886 | **−$2,114** | 90 |
 
 **The strategy is profitable under the naive fill model and loss-making under the real one.**
@@ -83,11 +84,18 @@ so the naive model's error compounds.
 1. **The ratio metric is fragile.** `(PnL_A − PnL_C) / |PnL_A|` blows up whenever `PnL_A` is
    near zero — at 100 µs latency both models lose money and the ratio stops meaning anything.
    Report the dollar gap alongside it, always.
-2. **Model B is not validated.** It fills a fifth as often as C and shows *positive* mark-outs,
-   which is not what a passive maker should show. Either mis-implemented or mis-parameterised;
-   it should not be quoted until that is resolved. A-vs-C is the whole argument.
+2. **Model B is cut from the headline.** Two real defects in it were found and fixed (it filled
+   only on trades landing exactly on its price, ignoring a market that traded *through* the
+   limit; then it over-corrected and treated a sweep as an ordinary queue advance). It still
+   reports a *higher* PnL than the naive model and captures 2.4× the spread per fill that L3
+   exact does, which no queue-position model should. It is left in the tree marked
+   EXPERIMENTAL. The tempting next move — keep adjusting it until it lands between A and C —
+   would be fitting the model to the expected answer, which is a worse failure than not having
+   it. A-vs-C is the whole argument and does not depend on B.
 3. **One hour, one stock, one day.** The numbers are real. Their error bars are not estimated,
-   and a single point estimate is not a finding.
+   and a single point estimate is not a finding. Splitting the hour into quarters, `PnL_C <
+   PnL_A` holds in all four — the direction is robust even where the ratio is noisy — but four
+   windows of one morning is not a sample.
 
 An experiment-design trap worth recording, because the first run fell into it: quoting a fixed
 offset from the mid **measured nothing at all** (gap ≈ 0). AAPL in 2012 routinely ran a $0.61

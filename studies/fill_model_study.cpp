@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -332,6 +333,44 @@ int main(int argc, char** argv) {
                       (45 + 15 * quarter) % 60);
         std::printf("%-16s %8zu %12.0f %12.0f %9.1f%%\n", label, window.size(), ra.pnl, rc.pnl,
                     100.0 * g);
+    }
+
+    // Machine-readable copies of the two sweeps, so a plot is a one-liner
+    // later and nobody has to retype numbers out of a terminal.
+    if (const char* csv_dir = std::getenv("STUDY_CSV_DIR")) {
+        const std::string dir = csv_dir;
+        if (std::FILE* f = std::fopen((dir + "/latency_sweep.csv").c_str(), "w")) {
+            std::fprintf(f, "order_latency_us,pnl_a,pnl_b,pnl_c,gap\n");
+            for (const std::int64_t latency : {0, 100, 500, 1000, 5000, 20000, 100000}) {
+                sim::NaiveFill a;
+                sim::ProbQueueFill b{1.0};
+                sim::L3ExactFill c;
+                const auto ra = run(a, events, seed, offset, latency);
+                const auto rb = run(b, events, seed, offset, latency);
+                const auto rc = run(c, events, seed, offset, latency);
+                const double g = ra.pnl == 0.0 ? 0.0 : (ra.pnl - rc.pnl) / std::abs(ra.pnl);
+                std::fprintf(f, "%lld,%.2f,%.2f,%.2f,%.4f\n", static_cast<long long>(latency),
+                             ra.pnl, rb.pnl, rc.pnl, g);
+            }
+            std::fclose(f);
+        }
+        if (std::FILE* f = std::fopen((dir + "/size_sweep.csv").c_str(), "w")) {
+            std::fprintf(f, "order_size,pct_of_touch_depth,pnl_a,pnl_c,gap\n");
+            for (const std::uint32_t size : {1u, 10u, 50u, 100u, 300u, 1000u, 3000u}) {
+                sim::NaiveFill a;
+                sim::L3ExactFill c;
+                const auto ra = run(a, events, seed, offset, 500, size);
+                const auto rc = run(c, events, seed, offset, 500, size);
+                const double g = ra.pnl == 0.0 ? 0.0 : (ra.pnl - rc.pnl) / std::abs(ra.pnl);
+                const double fraction =
+                    median_depth == 0 ? 0.0
+                                      : static_cast<double>(size) /
+                                            static_cast<double>(median_depth);
+                std::fprintf(f, "%u,%.4f,%.2f,%.2f,%.4f\n", size, fraction, ra.pnl, rc.pnl, g);
+            }
+            std::fclose(f);
+        }
+        std::printf("\nwrote latency_sweep.csv and size_sweep.csv to %s\n", csv_dir);
     }
 
     std::printf("\nOne hour of one stock on one day. The numbers are real; their error\n");

@@ -1,0 +1,123 @@
+# Does the fill assumption matter? A measurement
+
+Almost every backtester fakes the fill. *"I get the close." "I cross the spread and I'm done."
+"My limit order at the touch filled because the price traded there."* That assumption is where
+backtest returns come from, and it is where they die in production: a passive order at the touch
+fills only when the queue ahead of it drains, and the fills you *do* get are disproportionately
+the ones you didn't want.
+
+This is a measurement of how much that assumption is worth, in dollars, on real order-by-order
+data.
+
+## Method
+
+The identical strategy, on identical data, with identical latency, under different fill models.
+Everything varies except the one thing being measured.
+
+| | |
+|---|---|
+| Data | LOBSTER AAPL 2012-06-21, 09:30–10:30, level-50 (91,996 events) |
+| Strategy | fixed-size passive market maker, joining the touch on both sides |
+| Latency | feed 100 µs, order 500 µs (both swept) |
+| Fees | maker rebate 2 units/share, taker fee 3 units/share |
+| Engine | this repository's `std::map` matching engine, byte-identical to the published benchmark consensus on all five scenarios |
+
+**Model A — naive.** Filled whenever the market trades at my price. No queue. This is what most
+portfolio backtesters do, explicitly or by omission. One deliberate restraint: the fill is capped
+by the volume that actually traded rather than filling the order outright, which is the *less*
+generous variant — so the gap measured here is a lower bound.
+
+**Model C — L3 exact.** The order enters the same book as everyone else's through the matching
+engine, takes a real place in a real FIFO queue, and fills only when the size ahead of it
+actually drains via the historical cancels and executions being replayed.
+
+**Model B — L2 probabilistic** was implemented and is excluded. See *What went wrong* below.
+
+## The result
+
+At 100-share orders and 500 µs order latency:
+
+| Model | Fills | Spread capture | Mark-out @1s | @10s | @60s | Net PnL |
+|---|--:|--:|--:|--:|--:|--:|
+| A — naive | 1,118 | $467 | −$2,163 | −$3,171 | −$6,147 | **+$783** |
+| C — L3 exact | 908 | $1,075 | −$937 | −$3,886 | −$3,730 | **−$2,114** |
+
+**The strategy is profitable under the naive fill model and loss-making under the real one.**
+
+The mark-outs are the mechanism. Both models show negative mark-outs — a passive maker is
+adversely selected under either — but the naive model books fills it would never have received,
+at prices it would never have got, and the accumulated difference is the entire result.
+
+### But 100 shares is too big to claim that from
+
+Median displayed size at the touch is **109 shares**, so a 100-share order is 92% of a typical
+level. At that size the simulator's core assumption — that these orders do not change anyone
+else's behaviour — is carrying more weight than it can bear.
+
+Sweeping order size, with the position limit scaled alongside it so that the sweep measures size
+rather than the limit:
+
+| Order size | % of touch depth | PnL_A | PnL_C | Gap | Assumption |
+|--:|--:|--:|--:|--:|---|
+| 1 | 0.9% | $26 | $4 | 85% | defensible |
+| **10** | **9.2%** | **+$217** | **−$46** | **121%** | **defensible** |
+| 50 | 45.9% | $873 | −$936 | 207% | strained |
+| 100 | 91.7% | $783 | −$2,114 | 370% | strained |
+| 300 | 275% | −$2,233 | −$6,318 | 183% | strained |
+
+**The sign flip survives at a defensible size.** At 9.2% of displayed depth the naive model still
+reports a profit and the L3 model still reports a loss. That is the result this work earns; the
+370% is not.
+
+The gap grows monotonically with size across the defensible range, which is mechanically what
+should happen — a larger order waits longer in the queue, so the naive model's error compounds.
+
+### Robustness
+
+`PnL_A > PnL_C` at every order latency from 0 to 100 ms, and in all four quarter-hour windows of
+the sample. The *direction* is robust. The magnitude is not stable, and should not be quoted as
+though it were.
+
+## What went wrong, and what that cost
+
+Three mistakes are recorded here because each of them produced a plausible, publishable, wrong
+answer, and only deliberate suspicion caught them.
+
+**1. The first run measured nothing.** With the strategy quoting a fixed $0.30 from the mid, the
+gap came out near zero with unstable sign. AAPL in 2012 routinely ran a $0.61 spread, so a $0.30
+offset quotes *inside* the spread — where there is no queue to join, and where every fill model
+therefore agrees by construction. The tell was queue depth at entry: p90 of 18 shares. The
+strategy has to **join the touch** for queue position to exist as a thing that can be modelled. A
+study that skipped that check would have concluded "no gap" and been wrong.
+
+**2. Position limits silently never bound.** The strategy tracked only its most recent quote per
+side. On a requote the cancel took an order-latency to land, and in that window the forgotten
+order was still live and could still fill — and nothing told the strategy its orders were gone.
+Closing position reached 18,650 against a limit of 1,000, which makes the PnL a measurement of
+inventory mark-to-market rather than of execution. Fixed by notifying the strategy when its
+orders retire, and by limiting total *exposure* rather than filled position.
+
+**3. The headline was quoted at an indefensible size** before the size sweep existed — see above.
+
+## Limits of this result
+
+- **One hour, one stock, one day.** The numbers are real; their error bars are not estimated. A
+  single point estimate is not a finding.
+- **Queue-realistic, impact-free.** Replaying historical flow assumes these orders do not change
+  anyone else's behaviour. That holds for small passive size and fails for large; the size sweep
+  above is an attempt to say where. The paradigm that removes the assumption is agent-based
+  simulation ([ABIDES](https://github.com/jpmorganchase/abides-jpmc-public)).
+- **The ratio metric is fragile.** `(PnL_A − PnL_C)/|PnL_A|` blows up whenever `PnL_A` is near
+  zero. Report the dollar gap with it, always.
+- **The reconstruction is bounded to the touch.** Top-of-book exact for 54,605 consecutive events
+  and 99.90% of the session; at full 50-level depth, 2.84%. The strategy quotes at the touch, so
+  the bound covers what the study uses — but it is a bound.
+- **Model B is excluded**, so this is a two-model comparison, not three.
+
+## Reproducing
+
+```bash
+scripts/reproduce.sh                                  # everything that does not need Linux
+STUDY_CSV_DIR=/tmp build/studies/fill_model_study \
+    data/message_50.csv data/orderbook_50.csv         # the sweeps, as CSV
+```
