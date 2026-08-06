@@ -22,6 +22,7 @@
 #include <functional>
 #include <list>
 #include <map>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -196,6 +197,31 @@ public:
         return it == asks_.end() ? 0 : it->second.total;
     }
 
+    // How much quantity is resting AHEAD of `id` in its own price level — the
+    // size that must drain before this order can begin to fill.
+    //
+    // This is the central quantity of the whole project. A naive fill model
+    // assumes it is always zero; the measured gap between that assumption and
+    // this number is the result the simulator exists to produce.
+    //
+    // Returns nullopt if the order is not resting. O(orders at the level),
+    // which is fine at the rate a strategy asks about its own orders and would
+    // not be if anything asked per message.
+    std::optional<AggregateQuantity> quantity_ahead(OrderId id) const {
+        const auto found = index_.find(id);
+        if (found == index_.end()) return std::nullopt;
+
+        const Locator& loc = found->second;
+        const auto& levels_for_side = loc.side == Side::Buy
+                                          ? level_orders(bids_, loc.price)
+                                          : level_orders(asks_, loc.price);
+        AggregateQuantity ahead = 0;
+        for (auto it = levels_for_side.begin(); it != loc.node; ++it) {
+            ahead += it->remaining.units;
+        }
+        return ahead;
+    }
+
     bool empty() const noexcept { return bids_.empty() && asks_.empty(); }
 
     std::size_t resting_count() const noexcept { return index_.size(); }
@@ -318,6 +344,13 @@ private:
         }
         if (level.orders.empty()) levels.erase(level_it);
         return removed;
+    }
+
+    template <typename Levels>
+    static const std::list<RestingOrder>& level_orders(const Levels& levels, Price price) {
+        const auto it = levels.find(price);
+        assert(it != levels.end() && "an indexed order's level is missing");
+        return it->second.orders;
     }
 
     template <typename Levels>

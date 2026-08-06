@@ -44,11 +44,34 @@ namespace {
 
 constexpr std::size_t kLevels = 50;
 
-struct NullSink {
-    void operator()(const match::Report&) const {}
+// A single reusable id for the synthetic aggressors: each is IOC, so it never
+// rests and the id is free again the instant the call returns.
+constexpr std::uint64_t kAggressorId = (1ULL << 61) + 1;
+
+// How a LOBSTER type-4 visible execution is applied to the book. The choice is
+// the hinge between reconstruction and simulation.
+enum class ExecutionModel {
+    // "Reduce order N by s." Reproduces the venue's book exactly, because the
+    // message file is already the post-match record. But the engine never
+    // matches, so an injected order could never fill: nothing aggresses.
+    TargetedReduction,
+    // "An order arrived and consumed s at price p." The engine's FIFO decides
+    // who fills, which is what lets an injected order win a queue race — and
+    // therefore what the study needs. With no injected orders it must agree
+    // with TargetedReduction, and where it does not, the disagreement is
+    // itself the measurement: it means the reconstructed queue ORDER differs
+    // from the venue's real one.
+    Aggressor,
 };
 
-using Book = match::MapBook<NullSink>;
+struct CountingSink {
+    std::size_t* trades;
+    void operator()(const match::Report& r) const {
+        if (r.type == match::ReportType::Trade) ++*trades;
+    }
+};
+
+using Book = match::MapBook<CountingSink>;
 
 struct Stats {
     std::size_t rows = 0;
@@ -58,6 +81,13 @@ struct Stats {
     std::size_t unknown_id = 0;
     std::size_t short_reduction = 0;
     std::size_t parse_failures = 0;
+    std::size_t trades = 0;
+    // Aggressor-model diagnostics.
+    std::size_t executions = 0;
+    std::size_t maker_at_front = 0;      // the named order led its queue, as it did in reality
+    std::size_t maker_not_at_front = 0;  // our queue order disagrees with the venue's
+    std::size_t maker_untracked = 0;     // never submitted in-window; no queue to check
+    std::size_t swept_better_level = 0;  // filled at a price better than the execution price
     std::size_t longest_ok1_run = 0;
     std::size_t current_ok1_run = 0;
     std::size_t first_bad1 = 0;
@@ -100,14 +130,120 @@ bool prefix_equal(const std::vector<std::int64_t>& a, const std::vector<std::int
     return true;
 }
 
+// Applies one message to one book under the given execution model. Extracted
+// so that two books running different models can be driven in lockstep by the
+// null-order-invariance check.
+void apply(Book& book, const lobster::Message& m, ExecutionModel model, Stats& stats) {
+    switch (m.type) {
+        case lobster::EventType::NewLimitOrder:
+            // Resting directly rather than through the matching path: the
+            // message file is the venue's post-match record, so an order
+            // recorded as "new" did not trade on arrival.
+            book.on_new_order(match::Order{match::OrderId{m.order_id}, match::SeqNum{0},
+                                           match::Price{m.price}, match::Quantity{m.size},
+                                           m.side, match::TimeInForce::Gtc});
+            break;
+
+        case lobster::EventType::VisibleExecution:
+            if (model == ExecutionModel::Aggressor) {
+                ++stats.executions;
+
+                // LOBSTER's direction on an execution is the side of the
+                // order being EXECUTED — the maker. So the aggressor that
+                // caused it was on the other side.
+                const match::Side aggressor_side = match::opposite(m.side);
+                const match::Price price{m.price};
+
+                // Was the named maker actually at the front of its queue?
+                // In reality it must have been, or it would not have been
+                // the one to trade. If it is not at the front here, our
+                // reconstructed queue ORDER differs from the venue's, and
+                // the aggressor is about to fill somebody else.
+                const auto ahead = book.quantity_ahead(match::OrderId{m.order_id});
+                if (!ahead.has_value()) {
+                    ++stats.maker_untracked;
+                } else if (*ahead == 0) {
+                    ++stats.maker_at_front;
+                } else {
+                    ++stats.maker_not_at_front;
+                }
+
+                // A seeded snapshot is a depth photograph and can be
+                // crossed, so an aggressor at the execution price might
+                // find better liquidity first. Counted rather than
+                // assumed away.
+                const match::Price best = aggressor_side == match::Side::Buy
+                                              ? book.best_ask()
+                                              : book.best_bid();
+                if (best != match::Price::no_ask() && best != match::Price::no_bid() &&
+                    best != price && match::crosses(price, best, aggressor_side)) {
+                    ++stats.swept_better_level;
+                }
+
+                // IOC: an execution consumes what is there and leaves
+                // nothing resting behind. A GTC residual would invent
+                // liquidity the venue never had.
+                book.on_new_order(match::Order{
+                    match::OrderId{kAggressorId}, match::SeqNum{0}, price,
+                    match::Quantity{m.size}, aggressor_side, match::TimeInForce::Ioc});
+                break;
+            }
+            [[fallthrough]];
+        case lobster::EventType::PartialCancel:
+        case lobster::EventType::Delete: {
+            const match::Quantity want{m.size};
+            const match::Quantity got = book.reduce(match::OrderId{m.order_id}, want);
+            if (got < want) {
+                // Two distinct situations, counted separately because they
+                // mean different things about the data:
+                //   - nothing removed: the order was never submitted inside
+                //     the captured price range, which is the documented
+                //     LOBSTER filtering effect;
+                //   - something removed but not enough: the order WAS
+                //     tracked and was already short, which would point at a
+                //     replay bug rather than at the data.
+                if (!got) {
+                    ++stats.unknown_id;
+                } else {
+                    ++stats.short_reduction;
+                }
+                book.consume_at(m.side, match::Price{m.price}, want - got);
+            }
+            break;
+        }
+
+        case lobster::EventType::HiddenExecution:
+            ++stats.hidden;  // never displayed, so the visible book is unchanged
+            break;
+        case lobster::EventType::CrossTrade:
+            ++stats.cross;
+            break;
+        case lobster::EventType::Halt:
+            ++stats.halt;  // the published row duplicates the preceding state
+            break;
+    }
+
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        std::cerr << "usage: lobster_oracle <message_50.csv> <orderbook_50.csv> [max_rows]\n";
+        std::cerr << "usage: lobster_oracle <message_50.csv> <orderbook_50.csv> "
+                     "[max_rows] [reduction|aggressor]\n";
         return 2;
     }
     const std::size_t max_rows = argc > 3 ? std::stoull(argv[3]) : 0;
+    ExecutionModel model = ExecutionModel::TargetedReduction;
+    if (argc > 4) {
+        const std::string name = argv[4];
+        if (name == "aggressor") {
+            model = ExecutionModel::Aggressor;
+        } else if (name != "reduction") {
+            std::cerr << "unknown model '" << name << "' — expected reduction or aggressor\n";
+            return 2;
+        }
+    }
 
     std::ifstream messages(argv[1]);
     std::ifstream orderbook(argv[2]);
@@ -116,8 +252,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    Book book{NullSink{}};
     Stats stats;
+    Book book{CountingSink{&stats.trades}};
 
     // Synthetic ids for seeded liquidity, kept far above any real LOBSTER order
     // id so the two can never collide.
@@ -177,50 +313,7 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        switch (m.type) {
-            case lobster::EventType::NewLimitOrder:
-                // Resting directly rather than through the matching path: the
-                // message file is the venue's post-match record, so an order
-                // recorded as "new" did not trade on arrival.
-                book.on_new_order(match::Order{match::OrderId{m.order_id}, match::SeqNum{0},
-                                               match::Price{m.price}, match::Quantity{m.size},
-                                               m.side, match::TimeInForce::Gtc});
-                break;
-
-            case lobster::EventType::PartialCancel:
-            case lobster::EventType::VisibleExecution:
-            case lobster::EventType::Delete: {
-                const match::Quantity want{m.size};
-                const match::Quantity got = book.reduce(match::OrderId{m.order_id}, want);
-                if (got < want) {
-                    // Two distinct situations, counted separately because they
-                    // mean different things about the data:
-                    //   - nothing removed: the order was never submitted inside
-                    //     the captured price range, which is the documented
-                    //     LOBSTER filtering effect;
-                    //   - something removed but not enough: the order WAS
-                    //     tracked and was already short, which would point at a
-                    //     replay bug rather than at the data.
-                    if (!got) {
-                        ++stats.unknown_id;
-                    } else {
-                        ++stats.short_reduction;
-                    }
-                    book.consume_at(m.side, match::Price{m.price}, want - got);
-                }
-                break;
-            }
-
-            case lobster::EventType::HiddenExecution:
-                ++stats.hidden;  // never displayed, so the visible book is unchanged
-                break;
-            case lobster::EventType::CrossTrade:
-                ++stats.cross;
-                break;
-            case lobster::EventType::Halt:
-                ++stats.halt;  // the published row duplicates the preceding state
-                break;
-        }
+        apply(book, m, model, stats);
 
         if (!lobster::parse_orderbook_row(book_row, published.data(), kLevels)) {
             std::cerr << "cannot parse orderbook row " << stats.rows << '\n';
@@ -274,6 +367,23 @@ int main(int argc, char** argv) {
     std::printf("short reductions     : %zu  (order tracked but already short)\n",
                 stats.short_reduction);
     std::printf("parse failures       : %zu\n", stats.parse_failures);
+    std::printf("trades printed       : %zu\n", stats.trades);
+    if (model == ExecutionModel::Aggressor) {
+        const auto queue_pct = [&](std::size_t n) {
+            return stats.executions == 0 ? 0.0
+                                         : 100.0 * static_cast<double>(n) /
+                                               static_cast<double>(stats.executions);
+        };
+        std::printf("\nqueue-position agreement (aggressor model)\n");
+        std::printf("  executions replayed: %zu\n", stats.executions);
+        std::printf("  maker at queue front: %zu  (%.4f%%)\n", stats.maker_at_front,
+                    queue_pct(stats.maker_at_front));
+        std::printf("  maker behind others : %zu  (%.4f%%)\n", stats.maker_not_at_front,
+                    queue_pct(stats.maker_not_at_front));
+        std::printf("  maker untracked     : %zu  (%.4f%%)\n", stats.maker_untracked,
+                    queue_pct(stats.maker_untracked));
+        std::printf("  swept a better level: %zu\n", stats.swept_better_level);
+    }
     std::printf("book valid at end    : %s\n", book.validate() ? "yes" : "NO");
     return 0;
 }
