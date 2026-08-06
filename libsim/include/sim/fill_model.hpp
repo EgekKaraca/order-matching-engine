@@ -188,7 +188,18 @@ public:
         if (!is_trade && !is_reduction) return;
 
         for (auto& [id, order] : orders_) {
-            if (order.side != event.side || order.price != event.price) continue;
+            if (order.side != event.side) continue;
+
+            // A trade counts if it reached this order's price, not only if it
+            // landed exactly on it: a market that trades THROUGH a limit has
+            // traded against it. Requiring exact equality was under-filling
+            // this model by a factor of five relative to L3 exact, which made
+            // it look conservative when it was really just mis-specified.
+            // A cancellation, by contrast, only affects the queue at its own
+            // level, so that one does require an exact price match.
+            const bool relevant = is_trade ? match::crosses(order.price, event.price, order.side)
+                                           : order.price == event.price;
+            if (!relevant) continue;
 
             if (is_trade) {
                 // Trades consume the front of the queue, so they advance the
