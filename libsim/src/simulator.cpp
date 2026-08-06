@@ -227,6 +227,7 @@ void Simulator::publish_snapshot(Time as_of) {
 
     if (update.best_bid != match::Price::no_bid() && update.best_ask != match::Price::no_ask()) {
         mid_series_.emplace_back(as_of, update.best_bid.ticks + update.best_ask.ticks);
+        touch_depths_.push_back((update.bid_size + update.ask_size) / 2);
     }
 }
 

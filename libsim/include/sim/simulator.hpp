@@ -86,6 +86,12 @@ public:
     // strategy must never see, but the analyst may.
     const std::vector<std::pair<Time, std::int64_t>>& mid_series() const { return mid_series_; }
 
+    // Displayed size at the touch, sampled at every event. Lets an order size
+    // be expressed as a FRACTION OF LEVEL DEPTH — which is the axis along which
+    // the impact-free assumption stops being defensible, so it has to be
+    // measured rather than asserted.
+    const std::vector<match::AggregateQuantity>& touch_depths() const { return touch_depths_; }
+
 private:
     struct PendingSubmit {
         Time arrival;
@@ -171,6 +177,7 @@ private:
     BookView last_view_;
     std::vector<Fill> fills_;
     std::vector<std::pair<Time, std::int64_t>> mid_series_;
+    std::vector<match::AggregateQuantity> touch_depths_;
 };
 
 }  // namespace sim

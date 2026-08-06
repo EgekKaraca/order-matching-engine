@@ -57,6 +57,7 @@ struct Result {
     double markout_60s = 0.0;
     std::int64_t queue_median = 0;
     std::int64_t queue_p90 = 0;
+    std::uint32_t order_size = 0;
 };
 
 std::vector<sim::MarketEvent> load_events(const std::string& path) {
@@ -102,11 +103,15 @@ std::int64_t percentile(std::vector<std::int64_t> values, double p) {
 
 Result run(sim::FillModel& model, const std::vector<sim::MarketEvent>& events,
            const std::vector<std::int64_t>& seed, std::int64_t offset,
-           std::int64_t order_latency_us) {
+           std::int64_t order_latency_us, std::uint32_t order_size = 100,
+           std::vector<match::AggregateQuantity>* touch_depths_out = nullptr) {
     sim::FixedOffsetMakerConfig strategy_config;
     strategy_config.offset = offset;
-    strategy_config.size = match::Quantity{100};
-    strategy_config.max_position = 1000;
+    strategy_config.size = match::Quantity{order_size};
+    // Scaled with the order size, deliberately. A fixed limit would bind after
+    // ten fills at 100 shares and essentially never at 10 shares, so a size
+    // sweep against a fixed limit measures the limit rather than the size.
+    strategy_config.max_position = 10 * static_cast<std::int64_t>(order_size);
     sim::FixedOffsetMaker strategy{strategy_config};
 
     sim::ConstantDelay feed_delay{sim::micros(100)};
@@ -133,12 +138,14 @@ Result run(sim::FillModel& model, const std::vector<sim::MarketEvent>& events,
 
     const auto& fills = simulator.fills();
     const auto& mids = simulator.mid_series();
+    if (touch_depths_out != nullptr) *touch_depths_out = simulator.touch_depths();
 
     Result result;
     result.model = model.name();
     result.fills = fills.size();
     result.posted = static_cast<std::int64_t>(simulator.stats().strategy_submits) *
                     strategy_config.size.units;
+    result.order_size = order_size;
     result.position = simulator.portfolio().position();
     result.fees = simulator.portfolio().fees_paid();
     result.pnl = static_cast<double>(
@@ -244,6 +251,48 @@ int main(int argc, char** argv) {
         const double g = ra.pnl == 0.0 ? 0.0 : (ra.pnl - rc.pnl) / std::abs(ra.pnl);
         std::printf("%12lld %12.0f %12.0f %12.0f %9.1f%%\n", static_cast<long long>(latency),
                     ra.pnl, rb.pnl, rc.pnl, 100.0 * g);
+    }
+
+    // --- sensitivity to order size, i.e. the impact-assumption bound ---------
+    //
+    // The simulator is queue-realistic but IMPACT-FREE: it assumes the
+    // strategy's orders do not change anyone else's behaviour. That holds for
+    // small passive size and fails for large size, and the honest thing is to
+    // measure where it starts to bite rather than to assert a boundary.
+    //
+    // The reading to take from this table is NOT the PnL — it is the point at
+    // which the order stops being a small perturbation of the level it joins.
+    // Beyond roughly a tenth of displayed depth, the assumption that the
+    // historical counterparties would have behaved identically is doing more
+    // work than the measurement can support.
+    std::printf("\n=== how the gap varies with order size (the impact-assumption bound) ===\n");
+    std::vector<match::AggregateQuantity> depths;
+    {
+        sim::L3ExactFill probe_model;
+        run(probe_model, events, seed, offset, 500, 100, &depths);
+    }
+    const auto median_depth = depths.empty() ? 0 : [&] {
+        auto sorted = depths;
+        std::sort(sorted.begin(), sorted.end());
+        return sorted[sorted.size() / 2];
+    }();
+    std::printf("median displayed size at the touch: %llu shares\n\n",
+                static_cast<unsigned long long>(median_depth));
+    std::printf("%8s %10s %12s %12s %10s %s\n", "size", "of depth", "PnL_A", "PnL_C", "gap",
+                "impact-free?");
+    for (const std::uint32_t size : {1u, 10u, 50u, 100u, 300u, 1000u, 3000u}) {
+        sim::NaiveFill a;
+        sim::L3ExactFill c;
+        const auto ra = run(a, events, seed, offset, 500, size);
+        const auto rc = run(c, events, seed, offset, 500, size);
+        const double g = ra.pnl == 0.0 ? 0.0 : (ra.pnl - rc.pnl) / std::abs(ra.pnl);
+        const double fraction = median_depth == 0
+                                    ? 0.0
+                                    : static_cast<double>(size) /
+                                          static_cast<double>(median_depth);
+        std::printf("%8u %9.1f%% %12.0f %12.0f %9.1f%% %s\n", size, 100.0 * fraction, ra.pnl,
+                    rc.pnl, 100.0 * g,
+                    fraction <= 0.10 ? "defensible" : "ASSUMPTION STRAINED");
     }
 
     std::printf("\nOne hour of one stock on one day. The numbers are real; their error\n");

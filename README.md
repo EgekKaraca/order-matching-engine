@@ -49,16 +49,43 @@ latency, three fill models. AAPL 2012-06-21, 09:30–10:30, order latency 500 µ
 That is the single most useful sentence this project can produce, and it is a negative result
 about the strategy rather than a positive one — which is the point.
 
-`PnL_A > PnL_C` at every latency tested (0 to 100 ms). But three caveats, none of them
-optional:
+`PnL_A > PnL_C` at every latency tested (0 to 100 ms).
 
-1. **The headline ratio is fragile.** `(PnL_A − PnL_C) / |PnL_A|` is 370% here, and it is
-   unstable precisely because `PnL_A` is small: at 100 µs latency both models lose money and
-   the ratio becomes meaningless. The dollar gap — **$2,897** — is the more honest figure.
-2. **Model B is not validated.** It fills a fifth as often as C and shows *positive*
-   mark-outs, which is not what a passive maker should show. It is either mis-implemented or
-   mis-parameterised, and it should not be quoted until that is resolved. A-vs-C is the whole
-   argument; B is a refinement.
+#### But that table is at an order size the simulator cannot fully defend
+
+Median displayed size at the touch on this data is **109 shares**. The 100-share order above is
+therefore **92% of a typical level** — squarely in the regime where "my orders do not change
+anyone else's behaviour" is doing more work than it can bear. Quoting the 370% without that
+context would be overclaiming.
+
+Sweeping order size, with the position limit scaled alongside it so the sweep measures size
+rather than the limit:
+
+| Order size | % of touch depth | PnL_A | PnL_C | Gap | Impact-free assumption |
+|--:|--:|--:|--:|--:|---|
+| 1 | 0.9% | $26 | $4 | 85% | defensible |
+| **10** | **9.2%** | **+$217** | **−$46** | **121%** | **defensible** |
+| 50 | 45.9% | $873 | −$936 | 207% | strained |
+| 100 | 91.7% | $783 | −$2,114 | 370% | strained |
+| 300 | 275% | −$2,233 | −$6,318 | 183% | strained |
+
+**The sign flip survives at a defensible size.** At 10 shares — 9.2% of displayed depth, small
+enough that the no-impact assumption is reasonable — the naive model still reports a profit
+(+$217) and the L3 model still reports a loss (−$46). That, not the 370%, is the result this
+work actually earns.
+
+The gap also grows monotonically with size across the defensible range (85% → 121% → 207% →
+370%), which is the mechanically expected direction: a larger order waits longer in the queue,
+so the naive model's error compounds.
+
+#### Caveats, none of them optional
+
+1. **The ratio metric is fragile.** `(PnL_A − PnL_C) / |PnL_A|` blows up whenever `PnL_A` is
+   near zero — at 100 µs latency both models lose money and the ratio stops meaning anything.
+   Report the dollar gap alongside it, always.
+2. **Model B is not validated.** It fills a fifth as often as C and shows *positive* mark-outs,
+   which is not what a passive maker should show. Either mis-implemented or mis-parameterised;
+   it should not be quoted until that is resolved. A-vs-C is the whole argument.
 3. **One hour, one stock, one day.** The numbers are real. Their error bars are not estimated,
    and a single point estimate is not a finding.
 
