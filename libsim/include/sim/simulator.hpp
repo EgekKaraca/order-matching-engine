@@ -166,6 +166,11 @@ private:
     Strategy& strategy_;
     FillModel& fill_model_;
     ReactionModel* reaction_ = nullptr;
+    // Orders that never happened because the strategy crowded them out. Their
+    // later cancels and executions must not be replayed either: an order that
+    // was never added cannot later be cancelled, and replaying that cancel
+    // would drain the level front — quite possibly the strategy's own order.
+    std::unordered_set<std::uint64_t> suppressed_orders_;
     DelayModel& feed_delay_;
     DelayModel& order_delay_;
     SimulatorConfig config_;

@@ -38,7 +38,15 @@ void Simulator::seed_level(match::Side side, match::Price price, match::Quantity
 }
 
 bool Simulator::suppressed_by_reaction(const MarketEvent& event) {
-    if (reaction_ == nullptr || event.type != MarketEventType::Add) return false;
+    if (reaction_ == nullptr) return false;
+
+    // An order that was never added cannot later be reduced, deleted or
+    // executed. Replaying those events would drain the level from the front —
+    // and the order at the front might well be the strategy's own, which would
+    // hand it fills that nothing paid for.
+    if (event.type != MarketEventType::Add) {
+        return suppressed_orders_.count(match::value_of(event.id)) != 0;
+    }
 
     // Level-local only. Suppressing adds at other prices would be rewriting
     // the market rather than modelling a reaction to our presence.
@@ -61,6 +69,7 @@ bool Simulator::suppressed_by_reaction(const MarketEvent& event) {
         return false;
     }
     ++stats_.crowded_out;
+    suppressed_orders_.insert(match::value_of(event.id));
     return true;
 }
 

@@ -436,6 +436,38 @@ TEST(Impact, AnAddAtADifferentPriceIsNeverSuppressed) {
     EXPECT_EQ(sim.stats().crowded_out, 0u);
 }
 
+TEST(Impact, ASuppressedOrdersLaterEventsAreSuppressedToo) {
+    // The artifact this guards against is subtle and it materially changed the
+    // sensitivity result. If an Add is crowded out but that order's later
+    // DELETE is still replayed, the delete finds no such order and falls back
+    // to draining the level from the front — which may well be the strategy's
+    // own order, handing it a fill that nothing paid for.
+    //
+    // An order that never existed cannot later be cancelled.
+    OneShot strategy(Side::Buy, 100, 50);
+    ZeroDelay feed;
+    ZeroDelay order;
+    L3ExactFill fill_model;
+    AlwaysCrowdsOut reaction;
+    Simulator sim(strategy, feed, order, fill_model, {}, &reaction);
+
+    sim.on_market_event(add(0, 1, Side::Sell, 101, 10));
+    sim.on_market_event(add(1, 2, Side::Buy, 99, 10));
+    ASSERT_EQ(sim.stats().strategy_submits, 1u);
+
+    sim.on_market_event(add(2, 3, Side::Buy, 100, 400));
+    ASSERT_EQ(sim.stats().crowded_out, 1u);
+
+    // Order 3 never joined, so its delete must be a no-op. If it is replayed,
+    // consume_at drains the front of level 100 — the strategy's 50 shares.
+    sim.on_market_event(cancel(3, 3, Side::Buy, 100, 400));
+
+    EXPECT_EQ(sim.stats().strategy_fills, 0u) << "a phantom cancel ate the strategy's order";
+    // The strategy is still there and still fills when a real execution comes.
+    sim.on_market_event(execute(4, 999, Side::Buy, 100, 50));
+    EXPECT_EQ(sim.stats().strategy_fills, 1u);
+}
+
 // --- leakage discipline ------------------------------------------------------
 
 TEST(Leakage, TheViewIsAValueNotAWindowOntoTheLiveBook) {
