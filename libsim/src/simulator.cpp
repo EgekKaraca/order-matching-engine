@@ -87,6 +87,18 @@ void Simulator::on_market_event(const MarketEvent& event) {
     deliver_due(now_);
 }
 
+// Displayed size at the touch on the side this order will trade against. The
+// fill-probability surface needs it: a thin opposite side is what pulls the
+// price through a resting order.
+match::AggregateQuantity Simulator::opposite_touch_depth(match::Side side) const {
+    if (side == match::Side::Buy) {
+        const auto best = book_.best_ask();
+        return best == match::Price::no_ask() ? 0 : book_.depth_at(best, match::Side::Sell);
+    }
+    const auto best = book_.best_bid();
+    return best == match::Price::no_bid() ? 0 : book_.depth_at(best, match::Side::Buy);
+}
+
 void Simulator::record_fill(match::OrderId id, match::Side side, match::Price price,
                             match::Quantity quantity, match::AggregateQuantity ahead_at_entry,
                             bool maker) {
@@ -113,6 +125,12 @@ void Simulator::record_fill(match::OrderId id, match::Side side, match::Price pr
     // The strategy learns about it only after feed latency — a fill report is
     // a message from the venue like any other.
     fill_queue_.push_back(PendingFill{now_ + feed_delay_.sample(now_), fill});
+
+    const auto posted = posted_index_.find(id);
+    if (posted != posted_index_.end()) {
+        posted_orders_[posted->second].filled_quantity += quantity;
+        posted_orders_[posted->second].retired_at = now_;
+    }
 }
 
 void Simulator::on_report(const match::Report& report) {
@@ -142,6 +160,7 @@ void Simulator::on_report(const match::Report& report) {
         live_orders_.erase(maker);
         order_sides_.erase(report.maker_order_id);
         behind_at_entry_.erase(report.maker_order_id);
+        posted_index_.erase(report.maker_order_id);
         gone_queue_.push_back(
             PendingGone{now_ + feed_delay_.sample(now_), report.maker_order_id, true});
         ++stats_.orders_retired;
@@ -166,6 +185,7 @@ void Simulator::apply_model_fills(const MarketEvent& event) {
             live_orders_.erase(tracked);
             order_sides_.erase(filled.id);
             behind_at_entry_.erase(filled.id);
+            posted_index_.erase(filled.id);
             gone_queue_.push_back(PendingGone{now_ + feed_delay_.sample(now_), filled.id, true});
             ++stats_.orders_retired;
             remaining_.erase(filled.id);
@@ -191,6 +211,9 @@ void Simulator::release_orders(Time now) {
         order_sides_.erase(cancel.id);
         remaining_.erase(cancel.id);
         behind_at_entry_.erase(cancel.id);
+        const auto retiring = posted_index_.find(cancel.id);
+        if (retiring != posted_index_.end()) posted_orders_[retiring->second].retired_at = now;
+        posted_index_.erase(cancel.id);
         if (fill_model_.uses_engine()) {
             book_.on_cancel(match::SeqNum{0}, cancel.id);
         } else {
@@ -241,6 +264,18 @@ void Simulator::release_orders(Time now) {
                 const auto level = book_.depth_at(submit.price, submit.side);
                 const auto own = static_cast<match::AggregateQuantity>(submit.quantity.units);
                 behind_at_entry_[submit.id] = level > *ahead + own ? level - *ahead - own : 0;
+
+                PostedOrder record;
+                record.id = submit.id;
+                record.posted_at = now;
+                record.side = submit.side;
+                record.price = submit.price;
+                record.quantity = submit.quantity;
+                record.queue_ahead = *ahead;
+                record.queue_behind = behind_at_entry_[submit.id];
+                record.opposite_depth = opposite_touch_depth(submit.side);
+                posted_index_[submit.id] = posted_orders_.size();
+                posted_orders_.push_back(record);
             }
             // If it has no queue position it filled instantly on arrival, and
             // on_report has already accounted for it.
@@ -255,6 +290,18 @@ void Simulator::release_orders(Time now) {
             // The counterfactual models keep their orders out of the book, so
             // nothing can queue behind an order that is not there.
             behind_at_entry_[submit.id] = 0;
+
+            PostedOrder record;
+            record.id = submit.id;
+            record.posted_at = now;
+            record.side = submit.side;
+            record.price = submit.price;
+            record.quantity = submit.quantity;
+            record.queue_ahead = live_orders_[submit.id];
+            record.queue_behind = 0;
+            record.opposite_depth = opposite_touch_depth(submit.side);
+            posted_index_[submit.id] = posted_orders_.size();
+            posted_orders_.push_back(record);
         }
     }
 }

@@ -33,6 +33,7 @@
 #include "match/types.hpp"
 #include "sim/fill_model.hpp"
 #include "sim/latency.hpp"
+#include "sim/order_tracker.hpp"
 #include "sim/portfolio.hpp"
 #include "sim/strategy.hpp"
 #include "sim/types.hpp"
@@ -81,6 +82,10 @@ public:
     const Portfolio& portfolio() const { return portfolio_; }
     const SimulatorStats& stats() const { return stats_; }
     const std::vector<Fill>& fills() const { return fills_; }
+
+    // Every order the strategy posted, filled or not — the denominator any
+    // fill rate needs. fills() alone is the numerator.
+    const std::vector<PostedOrder>& posted_orders() const { return posted_orders_; }
 
     // (time, 2x mid) sampled at every event, for mark-out computation after the
     // run. Kept as a time series rather than folded in live, because a mark-out
@@ -141,6 +146,7 @@ private:
     void deliver_due(Time now);
     void release_orders(Time now);
     void publish_snapshot(Time as_of);
+    match::AggregateQuantity opposite_touch_depth(match::Side side) const;
     // Takes whatever the strategy just asked for and schedules it with order
     // latency. The strategy cannot do this itself — that is the point.
     void schedule_from_gate(Time decided_at);
@@ -188,6 +194,9 @@ private:
 
     BookView last_view_;
     std::vector<Fill> fills_;
+    std::vector<PostedOrder> posted_orders_;
+    // id -> index into posted_orders_, for currently-live orders only.
+    std::unordered_map<match::OrderId, std::size_t> posted_index_;
     std::vector<std::pair<Time, std::int64_t>> mid_series_;
     std::vector<match::AggregateQuantity> touch_depths_;
 };
