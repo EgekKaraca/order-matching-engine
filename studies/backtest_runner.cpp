@@ -231,11 +231,13 @@ int main(int argc, char** argv) {
     std::printf("avg mark-out (10s)   : $%.4f per fill  (negative = adverse selection)\n",
                 report.avg_markout);
     std::printf("stdev of 1s PnL      : $%.2f\n", report.return_stdev);
-    std::printf("Sharpe (annualised)  : %.2f\n", report.sharpe_annualised);
-    std::printf("  ^ from %zu one-second samples of a single session. Annualising an\n",
-                report.samples);
-    std::printf("    intraday hour to 252 days extrapolates ~1700x and inherits every\n");
-    std::printf("    bit of that leverage in its error. Do not quote it alone.\n");
+    std::printf("Sharpe (annualised)  : %.2f  raw\n", report.sharpe_annualised);
+    std::printf("Sharpe (deflated)    : %.2f  <- quote this one\n", report.sharpe_deflated);
+    std::printf("  skew %.2f, excess kurtosis %.2f, %zu one-second samples.\n",
+                report.return_skew, report.return_excess_kurtosis, report.samples);
+    std::printf("  The deflated figure applies the Bailey / Lopez de Prado haircut for a\n");
+    std::printf("  short sample and the number of variants tried. Annualising one\n");
+    std::printf("  intraday hour to 252 days is still a ~1700x extrapolation.\n");
 
     if (!options.equity_csv.empty()) {
         std::ofstream out(options.equity_csv);

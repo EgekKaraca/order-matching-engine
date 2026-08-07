@@ -18,6 +18,8 @@ add_executable(match_tests
   property_test.cpp
   engine_equivalence_test.cpp
   fill_probability_test.cpp
+  fill_classification_test.cpp
+  deflated_sharpe_test.cpp
   canonical_test.cpp
   lobster_test.cpp
   sim_test.cpp)

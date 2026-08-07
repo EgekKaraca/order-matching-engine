@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "sim/deflated_sharpe.hpp"
 #include "sim/types.hpp"
 
 namespace sim {
@@ -46,6 +47,11 @@ struct PerformanceReport {
     // Risk-adjusted. See the header note before quoting the Sharpe.
     double return_stdev = 0.0;
     double sharpe_annualised = 0.0;
+    // The same ratio after the short-sample and multiple-trials haircut. This
+    // is the one to quote.
+    double sharpe_deflated = 0.0;
+    double return_skew = 0.0;
+    double return_excess_kurtosis = 0.0;
     std::size_t samples = 0;
 
     // Per-fill economics.
@@ -140,6 +146,22 @@ public:
                 const double intervals_per_year =
                     252.0 * 6.5 * 3600.0 * 1e9 / static_cast<double>(sample_interval.count);
                 report.sharpe_annualised = per_interval * std::sqrt(intervals_per_year);
+
+                // Third and fourth moments of the sampled return series, which
+                // set how much the Sharpe estimate deserves to be trusted.
+                double m3 = 0.0;
+                double m4 = 0.0;
+                for (const double d : deltas) {
+                    const double z = (d - mean) / report.return_stdev;
+                    m3 += z * z * z;
+                    m4 += z * z * z * z;
+                }
+                const double count = static_cast<double>(deltas.size());
+                report.return_skew = m3 / count;
+                report.return_excess_kurtosis = m4 / count - 3.0;
+                report.sharpe_deflated =
+                    deflate_sharpe(report.sharpe_annualised, deltas.size(), trials_,
+                                   report.return_skew, report.return_excess_kurtosis);
             }
         }
 
@@ -171,6 +193,10 @@ public:
         return report;
     }
 
+    // How many strategy variants were evaluated before this one was reported.
+    // Left at 1 unless a sweep picked the result.
+    void set_trials(std::size_t trials) { trials_ = trials; }
+
 private:
     std::int64_t mid_at(Time when) const {
         if (mids_.empty()) return 0;
@@ -184,6 +210,7 @@ private:
     const std::vector<Fill>& fills_;
     const std::vector<std::pair<Time, std::int64_t>>& mids_;
     double scale_;
+    std::size_t trials_ = 1;
 };
 
 }  // namespace sim
