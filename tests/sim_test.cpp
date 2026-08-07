@@ -553,7 +553,7 @@ TEST(Performance, EquityTracksMarkToMarketNotRealisedPnl) {
         Fill{Time{0}, match::OrderId{1}, Side::Buy, Price{100}, Quantity{10}, true, 0}};
     const auto mids = flat_mids(220, 5);  // mid 110
 
-    const PerformanceAnalyzer analyzer(fills, mids);
+    const PerformanceAnalyzer analyzer(fills, mids, 1.0, /*trials=*/1);
     const auto curve = analyzer.equity_curve(seconds(1));
 
     ASSERT_FALSE(curve.empty());
@@ -572,7 +572,7 @@ TEST(Performance, DrawdownIsMeasuredOnMarkToMarket) {
         {Time{seconds(2).count}, 200},  // mid 100, equity 0
     };
 
-    const PerformanceAnalyzer analyzer(fills, mids);
+    const PerformanceAnalyzer analyzer(fills, mids, 1.0, /*trials=*/1);
     const auto report = analyzer.analyse(seconds(1), seconds(1));
     EXPECT_DOUBLE_EQ(report.max_drawdown, 100.0);
     EXPECT_DOUBLE_EQ(report.net_pnl, 0.0) << "ends flat, but the drawdown happened";
@@ -585,7 +585,7 @@ TEST(Performance, TurnoverAndRoundTripsCountBothSides) {
              0}};
     const auto mids = flat_mids(200, 3);
 
-    const PerformanceAnalyzer analyzer(fills, mids);
+    const PerformanceAnalyzer analyzer(fills, mids, 1.0, /*trials=*/1);
     const auto report = analyzer.analyse(seconds(1), seconds(1));
 
     EXPECT_EQ(report.shares_traded, 14);
@@ -605,7 +605,7 @@ TEST(Performance, HitRateCountsFillsThatWereRightAfterwards) {
         {Time{seconds(2).count}, 220},
     };
 
-    const PerformanceAnalyzer analyzer(fills, mids);
+    const PerformanceAnalyzer analyzer(fills, mids, 1.0, /*trials=*/1);
     const auto report = analyzer.analyse(seconds(1), seconds(1));
     EXPECT_DOUBLE_EQ(report.hit_rate, 0.5);
     EXPECT_DOUBLE_EQ(report.avg_markout, 0.0) << "the two cancel exactly";
@@ -617,7 +617,7 @@ TEST(Performance, TimeInMarketIgnoresFlatSamples) {
              0}};
     const auto mids = flat_mids(200, 4);
 
-    const PerformanceAnalyzer analyzer(fills, mids);
+    const PerformanceAnalyzer analyzer(fills, mids, 1.0, /*trials=*/1);
     const auto report = analyzer.analyse(seconds(1), seconds(1));
     // Flat for the first two samples of four.
     EXPECT_DOUBLE_EQ(report.time_in_market, 0.5);
@@ -628,7 +628,7 @@ TEST(Performance, AConstantPnlStreamHasNoVarianceAndNoSharpe) {
     // the most embarrassing number a backtester can print.
     const std::vector<Fill> fills;
     const auto mids = flat_mids(200, 10);
-    const PerformanceAnalyzer analyzer(fills, mids);
+    const PerformanceAnalyzer analyzer(fills, mids, 1.0, /*trials=*/1);
     const auto report = analyzer.analyse(seconds(1), seconds(1));
     EXPECT_DOUBLE_EQ(report.return_stdev, 0.0);
     EXPECT_DOUBLE_EQ(report.sharpe_annualised, 0.0);

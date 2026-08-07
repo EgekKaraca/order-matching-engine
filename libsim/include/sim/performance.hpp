@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "sim/deflated_sharpe.hpp"
+#include "sim/mid_series.hpp"
 #include "sim/types.hpp"
 
 namespace sim {
@@ -71,10 +72,14 @@ struct EquityPoint {
 // fill — legitimate for an analyst, forbidden for a strategy.
 class PerformanceAnalyzer {
 public:
-    PerformanceAnalyzer(const std::vector<Fill>& fills,
-                        const std::vector<std::pair<Time, std::int64_t>>& mid_x2_series,
-                        double units_per_currency = 1.0)
-        : fills_(fills), mids_(mid_x2_series), scale_(units_per_currency) {}
+    // `trials` is how many strategy variants or parameter settings were
+    // evaluated before this result was reported. It is a REQUIRED argument
+    // rather than a defaulted one: leaving it defaulted made every caller
+    // silently claim "the first thing we tried is what we are reporting",
+    // including the study that runs two seven-point sweeps.
+    PerformanceAnalyzer(const std::vector<Fill>& fills, const MidSeries& mid_x2_series,
+                        double units_per_currency, std::size_t trials)
+        : fills_(fills), mids_(mid_x2_series), scale_(units_per_currency), trials_(trials) {}
 
     std::vector<EquityPoint> equity_curve(Nanos interval) const {
         std::vector<EquityPoint> curve;
@@ -193,24 +198,13 @@ public:
         return report;
     }
 
-    // How many strategy variants were evaluated before this one was reported.
-    // Left at 1 unless a sweep picked the result.
-    void set_trials(std::size_t trials) { trials_ = trials; }
-
 private:
-    std::int64_t mid_at(Time when) const {
-        if (mids_.empty()) return 0;
-        const auto it = std::upper_bound(
-            mids_.begin(), mids_.end(), when,
-            [](Time t, const auto& entry) { return t < entry.first; });
-        if (it == mids_.begin()) return mids_.front().second;
-        return std::prev(it)->second;
-    }
+    std::int64_t mid_at(Time when) const { return mid_x2_at(mids_, when); }
 
     const std::vector<Fill>& fills_;
-    const std::vector<std::pair<Time, std::int64_t>>& mids_;
+    const MidSeries& mids_;
     double scale_;
-    std::size_t trials_ = 1;
+    std::size_t trials_;
 };
 
 }  // namespace sim

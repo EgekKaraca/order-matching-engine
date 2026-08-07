@@ -130,7 +130,7 @@ experiment as the fixed-offset maker here. At 10-share orders:
 
 | | Their live result | Ours (replay) |
 |---|---|---|
-| Naive market-making Sharpe | −109.0 | −18.1 raw / −19.8 deflated |
+| Naive market-making Sharpe | −109.0 | −18.1 raw / −22.5 deflated |
 | Fill rate vs queue position | falls toward the back | **falls toward the back ✓** |
 | Fill rate vs opposite depth | rises as it thins | **rises as it thickens ✗** |
 | Fill/return relationship | negatively correlated | negative mark-outs ✓ |

@@ -153,8 +153,12 @@ int main(int argc, char** argv) {
     }
 
     // --- 4. the Sharpe they can be compared on ------------------------------
+    // The reported configuration was selected after the study swept 7 order
+    // latencies and 7 order sizes. Claiming trials=1 here would understate the
+    // haircut on the very number being compared to a published result.
+    constexpr std::size_t kTrialsSearched = 14;
     const sim::PerformanceAnalyzer analyzer(simulator.fills(), simulator.mid_series(),
-                                            kUnitsPerDollar);
+                                            kUnitsPerDollar, kTrialsSearched);
     const auto report = analyzer.analyse(sim::seconds(1), sim::seconds(10));
     std::printf("\n=== risk-adjusted, against their -109 live Sharpe ===\n");
     std::printf("ours  : %.1f raw, %.1f deflated\n", report.sharpe_annualised,

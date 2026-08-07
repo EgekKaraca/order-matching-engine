@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "match/types.hpp"
+#include "sim/mid_series.hpp"
 #include "sim/types.hpp"
 
 namespace sim {
@@ -38,23 +39,11 @@ struct FillSplit {
     }
 };
 
-// Twice the mid at or before `when`, from a time-sorted series.
-inline std::int64_t mid_x2_at(const std::vector<std::pair<Time, std::int64_t>>& series,
-                              Time when) {
-    if (series.empty()) return 0;
-    const auto it = std::upper_bound(
-        series.begin(), series.end(), when,
-        [](Time t, const std::pair<Time, std::int64_t>& entry) { return t < entry.first; });
-    if (it == series.begin()) return series.front().second;
-    return std::prev(it)->second;
-}
-
 // Classifies MAKER fills only. A taker chose its own moment, so calling its
 // subsequent loss "adverse selection" would blame the market for the strategy's
 // decision.
 inline FillSplit classify_fills(const std::vector<Fill>& fills,
-                                const std::vector<std::pair<Time, std::int64_t>>& mid_x2_series,
-                                Nanos horizon) {
+                                const MidSeries& mid_x2_series, Nanos horizon) {
     FillSplit split;
     for (const Fill& fill : fills) {
         if (!fill.maker) continue;

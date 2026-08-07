@@ -35,6 +35,7 @@
 #include "adapters/lobster_events.hpp"
 #include "sim/fill_model.hpp"
 #include "sim/latency.hpp"
+#include "sim/mid_series.hpp"
 #include "sim/simulator.hpp"
 #include "sim/strategies/fixed_offset_maker.hpp"
 #include "sim/types.hpp"
@@ -82,18 +83,6 @@ std::vector<std::int64_t> load_seed(const std::string& path) {
         seed.clear();
     }
     return seed;
-}
-
-// Twice the mid at or before `when`. The series is sorted, so this is a binary
-// search. A mark-out deliberately reads the FUTURE of a fill — which the
-// strategy must never do, but the analyst must.
-std::int64_t mid_at(const std::vector<std::pair<sim::Time, std::int64_t>>& series,
-                    sim::Time when) {
-    if (series.empty()) return 0;
-    const auto it = std::upper_bound(series.begin(), series.end(), when,
-                                     [](sim::Time t, const auto& entry) { return t < entry.first; });
-    if (it == series.begin()) return series.front().second;
-    return std::prev(it)->second;
 }
 
 std::int64_t percentile(std::vector<std::int64_t> values, double p) {
@@ -163,7 +152,7 @@ Result run(sim::FillModel& model, const std::vector<sim::MarketEvent>& events,
 
         // Spread capture: what the passive fill earned against the mid at the
         // moment it happened. A buy below the mid is positive.
-        const double mid_now = static_cast<double>(mid_at(mids, fill.time)) / 2.0;
+        const double mid_now = static_cast<double>(sim::mid_x2_at(mids, fill.time)) / 2.0;
         result.spread_capture +=
             (mid_now - static_cast<double>(fill.price.ticks)) * sign * qty / kUnitsPerDollar;
 
@@ -171,7 +160,7 @@ Result run(sim::FillModel& model, const std::vector<sim::MarketEvent>& events,
         // selection — the fills that were granted were the ones worth granting
         // to somebody else.
         const auto markout = [&](sim::Nanos horizon) {
-            const double later = static_cast<double>(mid_at(mids, fill.time + horizon)) / 2.0;
+            const double later = static_cast<double>(sim::mid_x2_at(mids, fill.time + horizon)) / 2.0;
             return (later - static_cast<double>(fill.price.ticks)) * sign * qty / kUnitsPerDollar;
         };
         result.markout_1s += markout(sim::seconds(1));

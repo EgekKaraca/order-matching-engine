@@ -196,8 +196,10 @@ int main(int argc, char** argv) {
     }
     simulator.finish();
 
+    // One configuration, run once, as specified on the command line. Nothing
+    // was searched over, so the multiple-trials penalty is genuinely 1.
     const sim::PerformanceAnalyzer analyzer(simulator.fills(), simulator.mid_series(),
-                                            kUnitsPerDollar);
+                                            kUnitsPerDollar, /*trials=*/1);
     const auto report = analyzer.analyse(sim::seconds(1), sim::seconds(10));
     const auto& stats = simulator.stats();
 
