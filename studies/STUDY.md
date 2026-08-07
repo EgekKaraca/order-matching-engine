@@ -121,3 +121,89 @@ scripts/reproduce.sh                                  # everything that does not
 STUDY_CSV_DIR=/tmp build/studies/fill_model_study \
     data/message_50.csv data/orderbook_50.csv         # the sweeps, as CSV
 ```
+
+## Cross-validation against a live-trading experiment
+
+[arXiv:2502.18625](https://arxiv.org/html/2502.18625v2) ran 232,897 minimum-size maker orders
+on Binance BTC perps, submitted mechanically regardless of signal — structurally the same
+experiment as the fixed-offset maker here. At 10-share orders:
+
+| | Their live result | Ours (replay) |
+|---|---|---|
+| Naive market-making Sharpe | −109.0 | −18.1 raw / −19.8 deflated |
+| Fill rate vs queue position | falls toward the back | **falls toward the back ✓** |
+| Fill rate vs opposite depth | rises as it thins | **rises as it thickens ✗** |
+| Fill/return relationship | negatively correlated | negative mark-outs ✓ |
+
+**We reproduce one direction and contradict the other, and the contradiction is recorded
+rather than tuned away.**
+
+Fill probability by queue position and opposite depth, 1,791 posted orders:
+
+| Queue position | Thin opp | Mid opp | Thick opp |
+|---|--:|--:|--:|
+| front (0–25%) | 24.5% (204) | 32.0% (122) | 47.4% (19) |
+| back (75–100%) | 23.9% (920) | 21.3% (436) | 30.0% (90) |
+
+Front beats back in every column — that direction agrees. The opposite-depth direction does
+not, and three explanations are untested: a $0.61-spread equity at the touch is not a
+tight-spread crypto perp and a thick two-sided book may simply mean more trading; their
+opposite-depth measure may not be ours; and the thick-opposite cells hold only 19 and 90
+orders, so that column may be noise.
+
+**A structural limitation:** the two middle queue bins are empty and always will be. A
+join-the-touch strategy is either alone at its level or behind all of it, never in between,
+so only two of four rows can ever populate. Comparing a two-row surface to their full one is
+a real weakness of this cross-check.
+
+On the Sharpe: same sign, magnitude **not** claimed to match. Ours moves with order size
+(−18.1 at 10 shares, −70.8 at 100), so quoting whichever is closest to −109 would be choosing
+the number that flatters the comparison. The honest statement is that a mechanical,
+signal-free market maker loses money on a risk-adjusted basis in both.
+
+### Adverse versus benign fills
+
+Using [arXiv:2409.12721](https://arxiv.org/html/2409.12721)'s definition — a fill is adverse
+when the position is out of the money immediately after execution:
+
+| | Fills | PnL |
+|---|--:|--:|
+| Adverse | 246 | −$212.60 |
+| Benign | 246 | +$109.39 |
+
+The adverse fills are **half the count but nearly twice the magnitude**. That asymmetry is the
+mechanism, and it is exactly what a single blended PnL hides. It is also what the naive fill
+model structurally cannot produce, because it does not know which fills it would not have got.
+
+*(The exactly-even 246/246 count split is a coincidence in this sample rather than a
+constraint of the method — nothing in `classify_fills` forces balance. Worth re-checking on
+more data.)*
+
+### How much rests on the impact-free assumption
+
+Sweeping the crowd-out intensity (0 = the published impact-free baseline), 10-share orders:
+
+| Intensity | PnL_A | PnL_C | Gap | Adds crowded out |
+|--:|--:|--:|--:|--:|
+| 0.00 | $217 | −$46 | 121.2% | 0 |
+| 0.25 | $259 | −$81 | 131.2% | 1,305 |
+| 0.50 | $223 | −$43 | 119.4% | 1,948 |
+| 1.00 | $223 | −$53 | 123.9% | 2,891 |
+| 2.00 | $179 | −$33 | 118.4% | 3,854 |
+
+**The sign flip survives the entire sweep and the gap is stable at 118–131%.** The headline
+does not rest on the impact-free assumption — which is what this study existed to test, and
+was not the guaranteed answer.
+
+Read as a **sensitivity, not a correction**. The model captures one mechanism — participants
+declining to queue behind a visible order — and does not move the mid, model informed flow, or
+model a race to the touch. Removing the assumption properly needs agent-based simulation
+([ABIDES](https://github.com/jpmorganchase/abides-jpmc-public)) or a queue-reactive generative
+model ([arXiv:2603.24137](https://arxiv.org/pdf/2603.24137)).
+
+**The first version of that model had a real artifact**, caught only because the numbers looked
+wrong: `PnL_C` went positive under impact and fills collapsed from 492 to 60. An `Add` could be
+crowded out while that same order's later `Delete` was still replayed; the delete found no such
+order, fell back to draining the level from the front, and the order at the front was often the
+strategy's own — so crowding out was handing the strategy fills nothing paid for. An order that
+never existed cannot later be cancelled. Fixed, and pinned by a test.

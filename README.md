@@ -20,6 +20,8 @@ measured runs only.
 | 34-case conformance gate | ⏳ not yet run — needs Linux |
 | Worst-case throughput, P50 / P99 | ⏳ not measured |
 | **LOBSTER reconstruction** vs. the venue's published book | ✅ **top-of-book exact for 54,605 consecutive events; 99.90% of the session.** See the bound below. |
+| **Cross-validation** vs. a published live-trading experiment | ⚠️ **one direction reproduced, one contradicted** — see `studies/STUDY.md`. Recorded, not tuned away. |
+| **Impact-free assumption** | ✅ now a swept parameter rather than a premise. The gap is stable at 118–131% across the sweep. |
 | **The fill-model gap** | ⚠️ **first measurement taken — see below.** Directionally clear, but single-sample and with one model unvalidated. |
 
 ### What "report-stream correctness" does and does not mean

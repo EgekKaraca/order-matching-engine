@@ -54,6 +54,19 @@ fi
 
 echo
 echo "=============================================================="
+echo " 5. CROSS-VALIDATION against the published live-trading result"
+echo "=============================================================="
+if [[ -f data/message_50.csv ]]; then
+  build/studies/queue_validation data/message_50.csv data/orderbook_50.csv 10
+  echo
+  echo "--- how much of the result rests on the impact-free assumption ---"
+  build/studies/impact_sensitivity data/message_50.csv data/orderbook_50.csv 10
+else
+  echo "SKIPPED: no data/."
+fi
+
+echo
+echo "=============================================================="
 echo " NOT PRODUCED HERE: Verdict: VALID"
 echo "=============================================================="
 echo "The harness pins threads to cores and runs on Linux only. Section 2"
