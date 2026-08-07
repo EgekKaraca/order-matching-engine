@@ -238,10 +238,25 @@ public:
 
             if (is_trade) {
                 if (through_my_level) {
-                    // Swept. Everything ahead is gone and so am I.
+                    // Swept: the market traded beyond this order's price, so
+                    // everything ahead of it is gone.
+                    //
+                    // But the fill is still CAPPED BY THE VOLUME THAT TRADED.
+                    // Filling the whole order here — which this model did
+                    // originally — invents liquidity: it hands the order its
+                    // full size at its own limit no matter how little actually
+                    // changed hands. That path was 57% of this model's fills
+                    // and 72% of its volume, and it is why the model reported a
+                    // higher PnL than the naive one, which no queue-position
+                    // model should.
                     order.ahead = 0.0;
-                    out.push_back(ModelFill{id, order.quantity, order.price});
-                    order.quantity.units = 0;
+                    const auto fill = std::min(event.quantity.units, order.quantity.units);
+                    if (fill > 0) {
+                        ++swept_fills_;
+                        swept_quantity_ += fill;
+                        out.push_back(ModelFill{id, match::Quantity{fill}, order.price});
+                        order.quantity.units -= fill;
+                    }
                     continue;
                 }
                 // Trades consume the front of the queue, so they advance the
@@ -253,6 +268,8 @@ public:
                     const auto fill = static_cast<std::uint32_t>(
                         std::min<double>(overflow, order.quantity.units));
                     if (fill > 0) {
+                        ++drained_fills_;
+                        drained_quantity_ += fill;
                         out.push_back(ModelFill{id, match::Quantity{fill}, order.price});
                         order.quantity.units -= fill;
                     }
@@ -292,6 +309,18 @@ private:
         double ahead;
     };
 
+public:
+    // Diagnostics, exposed because this model is EXPERIMENTAL and the open
+    // question is which of its two fill paths is misbehaving. A fill either
+    // comes from the queue ahead draining away, or from the market trading
+    // clean through the level. Those are very different events and lumping
+    // them made the anomaly impossible to localise.
+    std::size_t swept_fills() const { return swept_fills_; }
+    std::size_t drained_fills() const { return drained_fills_; }
+    std::uint64_t swept_quantity() const { return swept_quantity_; }
+    std::uint64_t drained_quantity() const { return drained_quantity_; }
+
+private:
     double weight(double x) const { return std::pow(std::max(0.0, x), exponent_); }
 
     void erase_empty() {
@@ -302,6 +331,10 @@ private:
 
     double exponent_;
     std::unordered_map<match::OrderId, Resting> orders_;
+    std::size_t swept_fills_ = 0;
+    std::size_t drained_fills_ = 0;
+    std::uint64_t swept_quantity_ = 0;
+    std::uint64_t drained_quantity_ = 0;
 };
 
 }  // namespace sim

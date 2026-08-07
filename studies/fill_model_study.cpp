@@ -219,6 +219,31 @@ int main(int argc, char** argv) {
     }
     print_table(results);
 
+    // Model B is excluded from the headline, and this is the diagnostic that
+    // says why it still cannot be trusted. Its fills arrive by two very
+    // different routes — the queue ahead draining away, or the market trading
+    // clean THROUGH the level — and a sweep is an inherently adverse event
+    // while a drain is not. If B's PnL is flattered by counting sweeps as
+    // ordinary fills, this is where it shows.
+    {
+        sim::ProbQueueFill diagnostic{1.0};
+        run(diagnostic, events, seed, offset, 500);
+        const auto total = diagnostic.swept_fills() + diagnostic.drained_fills();
+        std::printf("\nmodel B fill paths (EXPERIMENTAL, excluded from the headline)\n");
+        std::printf("  queue drained through : %zu fills, %llu shares\n",
+                    diagnostic.drained_fills(),
+                    static_cast<unsigned long long>(diagnostic.drained_quantity()));
+        std::printf("  market swept the level: %zu fills, %llu shares",
+                    diagnostic.swept_fills(),
+                    static_cast<unsigned long long>(diagnostic.swept_quantity()));
+        if (total > 0) {
+            std::printf("  (%.1f%% of fills)",
+                        100.0 * static_cast<double>(diagnostic.swept_fills()) /
+                            static_cast<double>(total));
+        }
+        std::printf("\n");
+    }
+
     const double pnl_a = results[0].pnl;
     const double pnl_b = results[1].pnl;
     const double pnl_c = results[2].pnl;

@@ -130,14 +130,21 @@ int main(int argc, char** argv) {
     std::printf("  two-row surface to their full one is a real limitation.\n");
 
     // --- 2. adverse vs benign ----------------------------------------------
-    const sim::FillSplit split =
-        sim::classify_fills(simulator.fills(), simulator.mid_series(), sim::seconds(1));
+    // Reported at three horizons, not one. A split that is identical at every
+    // horizon would be structural — a sign the classifier is keying on
+    // something other than the price path — while one that moves is the market
+    // resolving at different speeds. The 1s figure alone cannot tell them apart.
     std::printf("\n=== adverse vs benign fills (arXiv:2409.12721 definition) ===\n");
-    std::printf("adverse : %6zu fills, $%9.2f\n", split.adverse_count,
-                split.adverse_pnl / kUnitsPerDollar);
-    std::printf("benign  : %6zu fills, $%9.2f\n", split.benign_count,
-                split.benign_pnl / kUnitsPerDollar);
-    std::printf("adverse share: %.1f%%\n", 100.0 * split.adverse_fraction());
+    std::printf("%10s %10s %10s %12s %12s\n", "horizon", "adverse", "benign", "adverse $",
+                "benign $");
+    for (const auto horizon : {sim::seconds(1), sim::seconds(10), sim::seconds(60)}) {
+        const sim::FillSplit split =
+            sim::classify_fills(simulator.fills(), simulator.mid_series(), horizon);
+        std::printf("%9llds %10zu %10zu %12.2f %12.2f  (%.1f%% adverse)\n",
+                    static_cast<long long>(horizon.count / 1000000000), split.adverse_count,
+                    split.benign_count, split.adverse_pnl / kUnitsPerDollar,
+                    split.benign_pnl / kUnitsPerDollar, 100.0 * split.adverse_fraction());
+    }
 
     // --- 3. queue position of the fills we actually got ---------------------
     std::vector<double> positions;

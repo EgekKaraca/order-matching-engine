@@ -175,9 +175,19 @@ The adverse fills are **half the count but nearly twice the magnitude**. That as
 mechanism, and it is exactly what a single blended PnL hides. It is also what the naive fill
 model structurally cannot produce, because it does not know which fills it would not have got.
 
-*(The exactly-even 246/246 count split is a coincidence in this sample rather than a
-constraint of the method — nothing in `classify_fills` forces balance. Worth re-checking on
-more data.)*
+Reported at three horizons, because a split identical at every horizon would be structural
+— a sign the classifier keys on something other than the price path — while one that moves is
+the market resolving at different speeds:
+
+| Horizon | Adverse | Benign | Adverse $ | Benign $ | Adverse share |
+|--:|--:|--:|--:|--:|--:|
+| 1s | 246 | 246 | −$212.60 | +$109.39 | 50.0% |
+| 10s | 287 | 205 | −$585.14 | +$326.17 | 58.3% |
+| 60s | 272 | 220 | −$1,079.67 | +$906.86 | 55.3% |
+
+The exactly-even split at 1s was a coincidence, now settled: it moves at the other horizons.
+The durable finding is that **adverse magnitude exceeds benign at every horizon**, and the
+adverse share peaks at 10s.
 
 ### How much rests on the impact-free assumption
 
