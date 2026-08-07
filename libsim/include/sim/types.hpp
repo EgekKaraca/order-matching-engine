@@ -66,6 +66,25 @@ struct Fill {
     // fill model implicitly assumes this is always zero; recording it is what
     // makes the contrast measurable rather than asserted.
     match::AggregateQuantity queue_ahead_at_entry = 0;
+    // Size resting behind it. Needed only to normalise the position — but
+    // without it this project's queue numbers cannot be compared to any
+    // published result, because the literature reports a fraction.
+    match::AggregateQuantity queue_behind_at_entry = 0;
+
+    // True when this fill had a queue position at all. A taker never queues,
+    // and reporting 0.0 for one would read as "front of the queue" — the
+    // opposite of the truth, which is "did not queue".
+    bool has_queue_position() const { return maker; }
+
+    // Queue position as the literature defines it: the fraction of the level's
+    // OTHER liquidity sitting ahead. 0 = front, 1 = back. Excludes the order's
+    // own size, so a large order does not flatter its own position.
+    // Source: arXiv:2502.18625.
+    double normalised_queue_position() const {
+        const auto others = queue_ahead_at_entry + queue_behind_at_entry;
+        if (others == 0) return 0.0;  // alone at the level, so at its front
+        return static_cast<double>(queue_ahead_at_entry) / static_cast<double>(others);
+    }
 };
 
 }  // namespace sim

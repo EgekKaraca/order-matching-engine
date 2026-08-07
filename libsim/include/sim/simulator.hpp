@@ -176,6 +176,9 @@ private:
     // entered the book.
     std::unordered_map<match::OrderId, match::AggregateQuantity> live_orders_;
     std::unordered_map<match::OrderId, match::Side> order_sides_;
+    // Depth behind each live strategy order at entry. Paired with live_orders_
+    // (which holds the depth ahead) to normalise the queue position on fills.
+    std::unordered_map<match::OrderId, match::AggregateQuantity> behind_at_entry_;
     std::unordered_map<match::OrderId, match::Quantity> remaining_;
     std::vector<ModelFill> model_fills_;
 

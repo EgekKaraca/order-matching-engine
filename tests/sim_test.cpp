@@ -172,6 +172,44 @@ TEST(Injection, AnOrderBehindTheQueueDoesNotFillUntilTheQueueDrains) {
         << "the size ahead at entry is the number the naive model assumes is zero";
 }
 
+TEST(Injection, RecordsNormalisedQueuePositionAtEntry) {
+    // 200 shares rest ahead when the strategy's 50-share order arrives, and
+    // nothing joins behind it. Queue position is therefore 1.0 — the very back.
+    OneShot strategy(Side::Buy, 100, 50);
+    ZeroDelay feed;
+    ZeroDelay order;
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
+
+    sim.seed_level(Side::Buy, Price{100}, Quantity{200});
+    sim.on_market_event(add(0, 1, Side::Sell, 101, 10));
+    sim.on_market_event(add(1, 2, Side::Buy, 99, 10));
+    sim.on_market_event(execute(2, 999, Side::Buy, 100, 250));
+
+    ASSERT_EQ(sim.fills().size(), 1u);
+    const Fill& fill = sim.fills().front();
+    EXPECT_EQ(fill.queue_ahead_at_entry, 200u);
+    EXPECT_EQ(fill.queue_behind_at_entry, 0u);
+    EXPECT_TRUE(fill.has_queue_position());
+    EXPECT_DOUBLE_EQ(fill.normalised_queue_position(), 1.0);
+}
+
+TEST(Injection, NormalisedQueuePositionIsZeroAtTheFrontOfAnEmptyLevel) {
+    OneShot strategy(Side::Buy, 100, 50);
+    ZeroDelay feed;
+    ZeroDelay order;
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
+
+    sim.on_market_event(add(0, 1, Side::Sell, 101, 10));
+    sim.on_market_event(add(1, 2, Side::Buy, 99, 10));
+    sim.on_market_event(execute(2, 999, Side::Buy, 100, 50));
+
+    ASSERT_EQ(sim.fills().size(), 1u);
+    EXPECT_EQ(sim.fills().front().queue_ahead_at_entry, 0u);
+    EXPECT_DOUBLE_EQ(sim.fills().front().normalised_queue_position(), 0.0);
+}
+
 TEST(Injection, QueuePositionIsDestroyedByCancellationToo) {
     OneShot strategy(Side::Buy, 100, 50);
     ZeroDelay feed;
@@ -257,6 +295,23 @@ TEST(Taker, CrossesTheSpreadAndFillsImmediately) {
     EXPECT_EQ(sim.fills().front().quantity, Quantity{30});
     EXPECT_EQ(sim.fills().front().queue_ahead_at_entry, 0u) << "a taker never queues";
     EXPECT_EQ(sim.portfolio().position(), 30);
+}
+
+TEST(Taker, HasNoQueuePositionAtAll) {
+    // A crossing order never queues, so a queue position of "0.0" would be a
+    // lie that reads as "front of the queue". It must be absent instead.
+    OneShotTaker strategy(Side::Buy, 101, 30);
+    ZeroDelay feed;
+    ZeroDelay order;
+    L3ExactFill fill_model;
+    Simulator sim(strategy, feed, order, fill_model, {});
+
+    sim.on_market_event(add(0, 1, Side::Buy, 99, 10));
+    sim.on_market_event(add(1, 2, Side::Sell, 101, 50));
+    sim.on_market_event(add(2, 3, Side::Sell, 102, 10));
+
+    ASSERT_EQ(sim.fills().size(), 1u);
+    EXPECT_FALSE(sim.fills().front().has_queue_position());
 }
 
 TEST(Taker, PaysTheTakerFeeRatherThanEarningTheRebate) {

@@ -98,6 +98,8 @@ void Simulator::record_fill(match::OrderId id, match::Side side, match::Price pr
     fill.quantity = quantity;
     fill.maker = maker;
     fill.queue_ahead_at_entry = ahead_at_entry;
+    const auto behind = behind_at_entry_.find(id);
+    fill.queue_behind_at_entry = behind == behind_at_entry_.end() ? 0 : behind->second;
 
     portfolio_.apply(fill);
     fills_.push_back(fill);
@@ -139,6 +141,7 @@ void Simulator::on_report(const match::Report& report) {
     if (!book_.quantity_ahead(report.maker_order_id).has_value()) {
         live_orders_.erase(maker);
         order_sides_.erase(report.maker_order_id);
+        behind_at_entry_.erase(report.maker_order_id);
         gone_queue_.push_back(
             PendingGone{now_ + feed_delay_.sample(now_), report.maker_order_id, true});
         ++stats_.orders_retired;
@@ -162,6 +165,7 @@ void Simulator::apply_model_fills(const MarketEvent& event) {
         if (fill_model_.queue_ahead(filled.id) == 0 && remaining_[filled.id] <= filled.quantity) {
             live_orders_.erase(tracked);
             order_sides_.erase(filled.id);
+            behind_at_entry_.erase(filled.id);
             gone_queue_.push_back(PendingGone{now_ + feed_delay_.sample(now_), filled.id, true});
             ++stats_.orders_retired;
             remaining_.erase(filled.id);
@@ -186,6 +190,7 @@ void Simulator::release_orders(Time now) {
         }
         order_sides_.erase(cancel.id);
         remaining_.erase(cancel.id);
+        behind_at_entry_.erase(cancel.id);
         if (fill_model_.uses_engine()) {
             book_.on_cancel(match::SeqNum{0}, cancel.id);
         } else {
@@ -231,6 +236,11 @@ void Simulator::release_orders(Time now) {
                 live_orders_[submit.id] = *ahead;
                 order_sides_[submit.id] = submit.side;
                 remaining_[submit.id] = submit.quantity;
+                // Everything at the level except this order and the part ahead
+                // of it. depth_at includes our own size, so subtract it.
+                const auto level = book_.depth_at(submit.price, submit.side);
+                const auto own = static_cast<match::AggregateQuantity>(submit.quantity.units);
+                behind_at_entry_[submit.id] = level > *ahead + own ? level - *ahead - own : 0;
             }
             // If it has no queue position it filled instantly on arrival, and
             // on_report has already accounted for it.
@@ -242,6 +252,9 @@ void Simulator::release_orders(Time now) {
             live_orders_[submit.id] = probe.depth_at(submit.price, submit.side);
             order_sides_[submit.id] = submit.side;
             remaining_[submit.id] = submit.quantity;
+            // The counterfactual models keep their orders out of the book, so
+            // nothing can queue behind an order that is not there.
+            behind_at_entry_[submit.id] = 0;
         }
     }
 }
