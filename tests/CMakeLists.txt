@@ -20,6 +20,7 @@ add_executable(match_tests
   fill_probability_test.cpp
   fill_classification_test.cpp
   deflated_sharpe_test.cpp
+  reaction_test.cpp
   canonical_test.cpp
   lobster_test.cpp
   sim_test.cpp)

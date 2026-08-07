@@ -13,6 +13,7 @@
 #include "sim/latency.hpp"
 #include "sim/performance.hpp"
 #include "sim/portfolio.hpp"
+#include "sim/reaction.hpp"
 #include "sim/simulator.hpp"
 #include "sim/strategies/fixed_offset_maker.hpp"
 #include "sim/strategy.hpp"
@@ -366,6 +367,73 @@ TEST(Taker, RespectsItsLimitPrice) {
 
     EXPECT_EQ(sim.stats().taker_fills, 0u);
     EXPECT_EQ(sim.portfolio().position(), 0);
+}
+
+// --- market impact ------------------------------------------------------------
+
+namespace {
+class AlwaysCrowdsOut final : public ReactionModel {
+public:
+    bool crowds_out(Time, Side, Price, match::AggregateQuantity,
+                    match::AggregateQuantity) override {
+        return true;
+    }
+    const char* name() const override { return "always"; }
+};
+}  // namespace
+
+TEST(Impact, ACrowdedOutAddNeverJoinsTheLevel) {
+    OneShot strategy(Side::Buy, 100, 50);
+    ZeroDelay feed;
+    ZeroDelay order;
+    L3ExactFill fill_model;
+    AlwaysCrowdsOut reaction;
+    Simulator sim(strategy, feed, order, fill_model, {}, &reaction);
+
+    sim.on_market_event(add(0, 1, Side::Sell, 101, 10));
+    sim.on_market_event(add(1, 2, Side::Buy, 99, 10));
+    ASSERT_EQ(sim.stats().strategy_submits, 1u);
+
+    // A historical buy joins at 100, where the strategy already rests.
+    sim.on_market_event(add(2, 3, Side::Buy, 100, 400));
+    EXPECT_EQ(sim.stats().crowded_out, 1u);
+
+    // Only the strategy's own 50 shares are at the level, so it fills.
+    sim.on_market_event(execute(3, 999, Side::Buy, 100, 50));
+    EXPECT_EQ(sim.stats().strategy_fills, 1u)
+        << "the crowded-out order should not have been ahead of us";
+}
+
+TEST(Impact, NoReactionLeavesTheBookExactlyAsBefore) {
+    // The default must be indistinguishable from having no reaction model at
+    // all, or every number already published changes meaning.
+    OneShot strategy(Side::Buy, 100, 50);
+    ZeroDelay feed;
+    ZeroDelay order;
+    L3ExactFill fill_model;
+    NoReaction reaction;
+    Simulator sim(strategy, feed, order, fill_model, {}, &reaction);
+
+    sim.on_market_event(add(0, 1, Side::Sell, 101, 10));
+    sim.on_market_event(add(1, 2, Side::Buy, 99, 10));
+    sim.on_market_event(add(2, 3, Side::Buy, 100, 400));
+    EXPECT_EQ(sim.stats().crowded_out, 0u);
+}
+
+TEST(Impact, AnAddAtADifferentPriceIsNeverSuppressed) {
+    // Crowding out is level-local. Suppressing adds elsewhere would be
+    // rewriting the market, not modelling a reaction to us.
+    OneShot strategy(Side::Buy, 100, 50);
+    ZeroDelay feed;
+    ZeroDelay order;
+    L3ExactFill fill_model;
+    AlwaysCrowdsOut reaction;
+    Simulator sim(strategy, feed, order, fill_model, {}, &reaction);
+
+    sim.on_market_event(add(0, 1, Side::Sell, 101, 10));
+    sim.on_market_event(add(1, 2, Side::Buy, 99, 10));
+    sim.on_market_event(add(2, 3, Side::Buy, 98, 400));  // different price
+    EXPECT_EQ(sim.stats().crowded_out, 0u);
 }
 
 // --- leakage discipline ------------------------------------------------------

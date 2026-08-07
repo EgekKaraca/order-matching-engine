@@ -19,9 +19,10 @@ struct Simulator::Probe final : BookProbe {
 };
 
 Simulator::Simulator(Strategy& strategy, DelayModel& feed_delay, DelayModel& order_delay,
-                     FillModel& fill_model, SimulatorConfig config)
+                     FillModel& fill_model, SimulatorConfig config, ReactionModel* reaction)
     : strategy_(strategy),
       fill_model_(fill_model),
+      reaction_(reaction),
       feed_delay_(feed_delay),
       order_delay_(order_delay),
       config_(config),
@@ -36,6 +37,33 @@ void Simulator::seed_level(match::Side side, match::Price price, match::Quantity
                                     quantity, side, match::TimeInForce::Gtc});
 }
 
+bool Simulator::suppressed_by_reaction(const MarketEvent& event) {
+    if (reaction_ == nullptr || event.type != MarketEventType::Add) return false;
+
+    // Level-local only. Suppressing adds at other prices would be rewriting
+    // the market rather than modelling a reaction to our presence.
+    match::AggregateQuantity strategy_size = 0;
+    for (const auto& [id, ahead] : live_orders_) {
+        (void)ahead;
+        const auto side = order_sides_.find(id);
+        if (side == order_sides_.end() || side->second != event.side) continue;
+        const auto posted = posted_index_.find(id);
+        if (posted == posted_index_.end()) continue;
+        if (posted_orders_[posted->second].price != event.price) continue;
+        const auto remaining = remaining_.find(id);
+        if (remaining == remaining_.end()) continue;
+        strategy_size += remaining->second.units;
+    }
+    if (strategy_size == 0) return false;
+
+    const auto depth = book_.depth_at(event.price, event.side);
+    if (!reaction_->crowds_out(event.time, event.side, event.price, strategy_size, depth)) {
+        return false;
+    }
+    ++stats_.crowded_out;
+    return true;
+}
+
 void Simulator::on_market_event(const MarketEvent& event) {
     now_ = event.time;
     ++stats_.events;
@@ -46,6 +74,14 @@ void Simulator::on_market_event(const MarketEvent& event) {
     // execution swept it, and applying it afterwards would silently save it
     // from every fill it should have taken.
     release_orders(now_);
+
+    // A participant who would not have joined our level, had we not been in
+    // it, simply does not appear.
+    if (suppressed_by_reaction(event)) {
+        publish_snapshot(now_);
+        deliver_due(now_);
+        return;
+    }
 
     switch (event.type) {
         case MarketEventType::Add:

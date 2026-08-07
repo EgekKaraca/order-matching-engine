@@ -34,6 +34,7 @@
 #include "sim/fill_model.hpp"
 #include "sim/latency.hpp"
 #include "sim/order_tracker.hpp"
+#include "sim/reaction.hpp"
 #include "sim/portfolio.hpp"
 #include "sim/strategy.hpp"
 #include "sim/types.hpp"
@@ -57,6 +58,9 @@ struct SimulatorStats {
     std::size_t taker_fills = 0;
     std::size_t rejected_cancels = 0;
     std::size_t orders_retired = 0;
+    // Historical adds suppressed because the strategy's presence crowded them
+    // out. Zero under the default impact-free model.
+    std::size_t crowded_out = 0;
     std::size_t callbacks = 0;
 };
 
@@ -65,8 +69,11 @@ public:
     // `fill_model` decides whether a strategy order fills. Pass L3ExactFill to
     // let the engine decide; the other models answer a counterfactual and
     // deliberately keep the strategy's orders out of the book.
+    // `reaction` is optional. nullptr means impact-free — the assumption every
+    // result produced before this parameter existed was produced under.
     Simulator(Strategy& strategy, DelayModel& feed_delay, DelayModel& order_delay,
-              FillModel& fill_model, SimulatorConfig config = {});
+              FillModel& fill_model, SimulatorConfig config = {},
+              ReactionModel* reaction = nullptr);
 
     // Seeds the book with resting liquidity that has no per-order identity —
     // a depth snapshot at the start of the window.
@@ -147,6 +154,9 @@ private:
     void release_orders(Time now);
     void publish_snapshot(Time as_of);
     match::AggregateQuantity opposite_touch_depth(match::Side side) const;
+    // True when a historical add would not have happened had the strategy not
+    // been resting at that price.
+    bool suppressed_by_reaction(const MarketEvent& event);
     // Takes whatever the strategy just asked for and schedules it with order
     // latency. The strategy cannot do this itself — that is the point.
     void schedule_from_gate(Time decided_at);
@@ -155,6 +165,7 @@ private:
 
     Strategy& strategy_;
     FillModel& fill_model_;
+    ReactionModel* reaction_ = nullptr;
     DelayModel& feed_delay_;
     DelayModel& order_delay_;
     SimulatorConfig config_;
