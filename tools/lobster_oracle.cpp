@@ -339,13 +339,13 @@ int main(int argc, char** argv) {
         ++stats.compared;
 
         const bool ok1 = prefix_equal(mine, published, 1);
-        stats.ok1 += ok1 ? 1 : 0;
-        stats.ok5 += prefix_equal(mine, published, 5) ? 1 : 0;
-        stats.ok10 += prefix_equal(mine, published, 10) ? 1 : 0;
+        stats.ok1 += ok1 ? 1U : 0U;
+        stats.ok5 += prefix_equal(mine, published, 5) ? 1U : 0U;
+        stats.ok10 += prefix_equal(mine, published, 10) ? 1U : 0U;
         // The strictest comparison available: all 50 published levels. Nothing
         // in the project claims this depth — it is reported so the bound of the
         // claim that IS made is visible rather than assumed.
-        stats.ok_full += prefix_equal(mine, published, kLevels) ? 1 : 0;
+        stats.ok_full += prefix_equal(mine, published, kLevels) ? 1U : 0U;
 
         if (ok1) {
             ++stats.current_ok1_run;

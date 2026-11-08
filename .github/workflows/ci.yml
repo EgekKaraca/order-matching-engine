@@ -31,6 +31,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # clang-18 is not preinstalled on the current runner image, so the
+      # compiler the matrix names has to be installed rather than assumed.
+      - name: Install clang-18
+        if: matrix.cxx == 'clang++-18'
+        run: sudo apt-get update && sudo apt-get install -y clang-18
+
       - name: Configure
         env:
           CC: ${{ matrix.cc }}
