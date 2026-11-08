@@ -22,11 +22,12 @@
 #ifndef SIM_STRATEGIES_MOMENTUM_TAKER_HPP
 #define SIM_STRATEGIES_MOMENTUM_TAKER_HPP
 
+#include "sim/strategy.hpp"
+#include "sim/types.hpp"
+
 #include <cstdint>
 
 #include "match/types.hpp"
-#include "sim/strategy.hpp"
-#include "sim/types.hpp"
 
 namespace sim {
 
@@ -46,7 +47,7 @@ struct MomentumTakerConfig {
 };
 
 class MomentumTaker final : public Strategy {
-public:
+  public:
     explicit MomentumTaker(MomentumTakerConfig config = {}) : config_(config) {}
 
     void on_book(const BookView& book, OrderGate& gate) override {
@@ -88,7 +89,7 @@ public:
 
     std::int64_t position() const { return position_; }
 
-private:
+  private:
     MomentumTakerConfig config_;
     std::int64_t ema_x2_ = 0;
     bool seeded_ = false;

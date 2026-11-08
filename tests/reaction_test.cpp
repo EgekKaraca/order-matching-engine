@@ -9,12 +9,13 @@
 // result remains the baseline rather than being silently replaced.
 #include "sim/reaction.hpp"
 
-#include <gtest/gtest.h>
+#include "sim/types.hpp"
 
 #include <cstdint>
 
 #include "match/types.hpp"
-#include "sim/types.hpp"
+
+#include <gtest/gtest.h>
 
 namespace sim {
 namespace {

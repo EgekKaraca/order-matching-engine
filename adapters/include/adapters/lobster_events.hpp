@@ -7,10 +7,10 @@
 #ifndef ADAPTERS_LOBSTER_EVENTS_HPP
 #define ADAPTERS_LOBSTER_EVENTS_HPP
 
-#include <optional>
-
 #include "adapters/lobster.hpp"
 #include "sim/types.hpp"
+
+#include <optional>
 
 namespace lobster {
 

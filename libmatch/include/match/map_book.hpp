@@ -53,7 +53,7 @@ using AskLevels = std::map<Price, Level, std::less<Price>>;
 
 template <typename Sink>
 class MapBook {
-public:
+  public:
     explicit MapBook(Sink sink) : sink_(std::move(sink)) {}
 
     void on_new_order(const Order& order) {
@@ -62,8 +62,8 @@ public:
         // of a live stream, not for the hash.
         emit(Report::order_ack(order.seq, order.id, order.side, order.price, order.quantity));
 
-        const Quantity residual = sweep(order.side, order.price, order.quantity, order.id,
-                                        order.seq);
+        const Quantity residual =
+            sweep(order.side, order.price, order.quantity, order.id, order.seq);
         if (!residual) return;
 
         if (order.tif == TimeInForce::Ioc) {
@@ -212,9 +212,8 @@ public:
         if (found == index_.end()) return std::nullopt;
 
         const Locator& loc = found->second;
-        const auto& levels_for_side = loc.side == Side::Buy
-                                          ? level_orders(bids_, loc.price)
-                                          : level_orders(asks_, loc.price);
+        const auto& levels_for_side =
+            loc.side == Side::Buy ? level_orders(bids_, loc.price) : level_orders(asks_, loc.price);
         AggregateQuantity ahead = 0;
         for (auto it = levels_for_side.begin(); it != loc.node; ++it) {
             ahead += it->remaining.units;
@@ -235,7 +234,7 @@ public:
                !is_crossed() && index_consistent();
     }
 
-private:
+  private:
     struct Locator {
         Side side{};
         Price price{};

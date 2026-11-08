@@ -24,16 +24,16 @@
 #ifndef SIM_LATENCY_HPP
 #define SIM_LATENCY_HPP
 
+#include "sim/types.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <random>
 
-#include "sim/types.hpp"
-
 namespace sim {
 
 class DelayModel {
-public:
+  public:
     virtual ~DelayModel() = default;
 
     // The delay applying to something that happens at `when`. Taking the time
@@ -48,7 +48,7 @@ public:
 // right thing to sweep first because the result is attributable to exactly one
 // parameter.
 class ConstantDelay final : public DelayModel {
-public:
+  public:
     explicit ConstantDelay(Nanos delay) : delay_(delay) {}
 
     Nanos sample(Time) override { return delay_; }
@@ -56,7 +56,7 @@ public:
 
     Nanos value() const { return delay_; }
 
-private:
+  private:
     Nanos delay_;
 };
 
@@ -67,7 +67,7 @@ private:
 // Seeded and reproducible, because a backtest whose answer moves between runs
 // cannot be argued with.
 class LognormalDelay final : public DelayModel {
-public:
+  public:
     LognormalDelay(Nanos median, double sigma, std::uint64_t seed, Nanos floor = Nanos{0})
         : median_(median), sigma_(sigma), floor_(floor), rng_(seed) {}
 
@@ -82,7 +82,7 @@ public:
 
     const char* name() const override { return "lognormal"; }
 
-private:
+  private:
     Nanos median_;
     double sigma_;
     Nanos floor_;
@@ -93,7 +93,7 @@ private:
 // a real run is exactly the assumption the study exists to refute, so it is
 // named to make that obvious in a config.
 class ZeroDelay final : public DelayModel {
-public:
+  public:
     Nanos sample(Time) override { return Nanos{0}; }
     const char* name() const override { return "zero (unphysical)"; }
 };

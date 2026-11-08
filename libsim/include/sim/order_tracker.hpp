@@ -11,10 +11,11 @@
 #ifndef SIM_ORDER_TRACKER_HPP
 #define SIM_ORDER_TRACKER_HPP
 
+#include "sim/types.hpp"
+
 #include <cstdint>
 
 #include "match/types.hpp"
-#include "sim/types.hpp"
 
 namespace sim {
 

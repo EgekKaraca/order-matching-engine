@@ -23,10 +23,10 @@
 //   c++ -std=c++20 -O3 -march=native -fPIC -shared \
 //       -I <benchmark>/api -I libmatch/include \
 //       adapters/benchmark_adapter.cpp -o ome_adapter.so
+#include "matching_engine_api.h"
+
 #include <cstdint>
 #include <optional>
-
-#include "matching_engine_api.h"
 
 #include "match/map_book.hpp"
 #include "match/report.hpp"
@@ -98,8 +98,8 @@ void engine_on_cancel(const cancel_t* cancel) {
 
 void engine_on_modify(const modify_t* modify) {
     g_book->on_modify(match::SeqNum{modify->sequence_number}, match::OrderId{modify->order_id},
-                      static_cast<match::Side>(modify->side),
-                      match::Price{modify->new_price_ticks}, match::Quantity{modify->new_quantity});
+                      static_cast<match::Side>(modify->side), match::Price{modify->new_price_ticks},
+                      match::Quantity{modify->new_quantity});
 }
 
 // The matching core is single-threaded and synchronous: every report is already
@@ -107,13 +107,9 @@ void engine_on_modify(const modify_t* modify) {
 // drain. This is a no-op honestly, not a deferral.
 void engine_flush(void) {}
 
-std::int64_t engine_query_best_bid(void) {
-    return g_book->best_bid().ticks;
-}
+std::int64_t engine_query_best_bid(void) { return g_book->best_bid().ticks; }
 
-std::int64_t engine_query_best_ask(void) {
-    return g_book->best_ask().ticks;
-}
+std::int64_t engine_query_best_ask(void) { return g_book->best_ask().ticks; }
 
 std::uint64_t engine_query_depth_at(std::int64_t price_ticks, std::uint8_t side) {
     return g_book->depth_at(match::Price{price_ticks}, static_cast<match::Side>(side));

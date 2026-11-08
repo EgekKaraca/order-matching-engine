@@ -8,8 +8,6 @@
 // failure there, discovered days earlier.
 #include "match/map_book.hpp"
 
-#include <gtest/gtest.h>
-
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -18,11 +16,13 @@
 #include "match/report.hpp"
 #include "match/types.hpp"
 
+#include <gtest/gtest.h>
+
 namespace match {
 namespace {
 
 class BookTest : public ::testing::Test {
-protected:
+  protected:
     struct Sink {
         std::vector<Report>* out;
         void operator()(const Report& r) const { out->push_back(r); }
@@ -134,8 +134,8 @@ TEST_F(BookTest, FifoWithinAPriceLevel) {
     add(4, Side::Sell, 100, 25);
 
     // Earliest first, and the third order is left with 5.
-    EXPECT_EQ(lines(), (Lines{"0,3,1,4,100,25", "1,3,100,10,1,4", "1,3,100,10,2,4",
-                              "1,3,100,5,3,4"}));
+    EXPECT_EQ(lines(),
+              (Lines{"0,3,1,4,100,25", "1,3,100,10,1,4", "1,3,100,10,2,4", "1,3,100,5,3,4"}));
     EXPECT_EQ(book_.depth_at(Price{100}, Side::Buy), 5u);
 }
 
@@ -148,8 +148,8 @@ TEST_F(BookTest, SweepsBestPriceFirstAcrossLevels) {
 
     // 100, then 101, then 102 — cheapest liquidity first, regardless of when
     // each order arrived.
-    EXPECT_EQ(lines(), (Lines{"0,3,0,4,102,30", "1,3,100,10,2,4", "1,3,101,10,3,4",
-                              "1,3,102,10,1,4"}));
+    EXPECT_EQ(lines(),
+              (Lines{"0,3,0,4,102,30", "1,3,100,10,2,4", "1,3,101,10,3,4", "1,3,102,10,1,4"}));
     EXPECT_TRUE(book_.empty());
 }
 
@@ -228,8 +228,8 @@ TEST_F(BookTest, CancelHeadThenSweepKeepsTheOrdersBehind) {
     cancel(1);
     add(4, Side::Sell, 100, 20);
 
-    EXPECT_EQ(lines(), (Lines{"2,3,0,1,100", "0,4,1,4,100,20", "1,4,100,10,2,4",
-                              "1,4,100,10,3,4"}));
+    EXPECT_EQ(lines(),
+              (Lines{"2,3,0,1,100", "0,4,1,4,100,20", "1,4,100,10,2,4", "1,4,100,10,3,4"}));
     EXPECT_TRUE(book_.empty());
 }
 
@@ -242,8 +242,8 @@ TEST_F(BookTest, CancelMiddleThenSweepKeepsTheOrdersBehind) {
     cancel(2);
     add(4, Side::Sell, 100, 20);
 
-    EXPECT_EQ(lines(), (Lines{"2,3,0,2,100", "0,4,1,4,100,20", "1,4,100,10,1,4",
-                              "1,4,100,10,3,4"}));
+    EXPECT_EQ(lines(),
+              (Lines{"2,3,0,2,100", "0,4,1,4,100,20", "1,4,100,10,1,4", "1,4,100,10,3,4"}));
 }
 
 TEST_F(BookTest, DeepFifoSurvivesScatteredCancels) {
@@ -256,9 +256,9 @@ TEST_F(BookTest, DeepFifoSurvivesScatteredCancels) {
     add(99, Side::Sell, 100, 60);
 
     // The six survivors fill in their original arrival order.
-    EXPECT_EQ(lines(), (Lines{"0,14,1,99,100,60", "1,14,100,10,1,99", "1,14,100,10,3,99",
-                              "1,14,100,10,4,99", "1,14,100,10,7,99", "1,14,100,10,8,99",
-                              "1,14,100,10,10,99"}));
+    EXPECT_EQ(lines(),
+              (Lines{"0,14,1,99,100,60", "1,14,100,10,1,99", "1,14,100,10,3,99", "1,14,100,10,4,99",
+                     "1,14,100,10,7,99", "1,14,100,10,8,99", "1,14,100,10,10,99"}));
     EXPECT_TRUE(book_.empty());
 }
 
@@ -538,8 +538,7 @@ TEST_F(BookTest, HandlesPricesNearTheRepresentationalCeiling) {
     clear();
     add(2, Side::Buy, high, 10);
 
-    EXPECT_EQ(lines(), (Lines{"0,1,0,2,4611686018427387904,10",
-                              "1,1,4611686018427387904,10,1,2"}));
+    EXPECT_EQ(lines(), (Lines{"0,1,0,2,4611686018427387904,10", "1,1,4611686018427387904,10,1,2"}));
     EXPECT_TRUE(book_.empty());
 }
 
@@ -575,11 +574,10 @@ TEST_F(BookTest, QuantityIsConservedAcrossAMixedSequence) {
         if (r.type == ReportType::Trade) filled += r.quantity.units;
         if (r.type == ReportType::CancelAck) withdrawn += r.quantity.units;
     }
-    const AggregateQuantity resting = book_.depth_at(Price{100}, Side::Sell) +
-                                      book_.depth_at(Price{99}, Side::Sell) +
-                                      book_.depth_at(Price{101}, Side::Sell) +
-                                      book_.depth_at(Price{100}, Side::Buy) +
-                                      book_.depth_at(Price{99}, Side::Buy);
+    const AggregateQuantity resting =
+        book_.depth_at(Price{100}, Side::Sell) + book_.depth_at(Price{99}, Side::Sell) +
+        book_.depth_at(Price{101}, Side::Sell) + book_.depth_at(Price{100}, Side::Buy) +
+        book_.depth_at(Price{99}, Side::Buy);
 
     EXPECT_EQ(filled, 100u);
     EXPECT_EQ(withdrawn, 100u);

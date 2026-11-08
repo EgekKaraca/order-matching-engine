@@ -26,16 +26,17 @@
 #ifndef SIM_REACTION_HPP
 #define SIM_REACTION_HPP
 
+#include "sim/types.hpp"
+
 #include <cstdint>
 #include <random>
 
 #include "match/types.hpp"
-#include "sim/types.hpp"
 
 namespace sim {
 
 class ReactionModel {
-public:
+  public:
     virtual ~ReactionModel() = default;
 
     // Called when a historical participant is about to add liquidity at a price
@@ -54,7 +55,7 @@ public:
 // The current behaviour, named. Every result produced before this file existed
 // was produced under this model, so it remains the baseline.
 class NoReaction final : public ReactionModel {
-public:
+  public:
     bool crowds_out(Time, match::Side, match::Price, match::AggregateQuantity,
                     match::AggregateQuantity) override {
         return false;
@@ -66,16 +67,14 @@ public:
 // of the level. Linear because nothing in one hour of one stock justifies a
 // fitted curve, and a fitted curve on that sample would be decoration.
 class CrowdOutReaction final : public ReactionModel {
-public:
-    CrowdOutReaction(double intensity, std::uint64_t seed)
-        : intensity_(intensity), rng_(seed) {}
+  public:
+    CrowdOutReaction(double intensity, std::uint64_t seed) : intensity_(intensity), rng_(seed) {}
 
     bool crowds_out(Time, match::Side, match::Price, match::AggregateQuantity strategy_size,
                     match::AggregateQuantity level_depth) override {
         if (level_depth == 0 || intensity_ <= 0.0) return false;
 
-        const double share =
-            static_cast<double>(strategy_size) / static_cast<double>(level_depth);
+        const double share = static_cast<double>(strategy_size) / static_cast<double>(level_depth);
         const double probability = intensity_ * share;
         return std::uniform_real_distribution<double>(0.0, 1.0)(rng_) < probability;
     }
@@ -84,7 +83,7 @@ public:
 
     double intensity() const { return intensity_; }
 
-private:
+  private:
     double intensity_;
     std::mt19937_64 rng_;
 };

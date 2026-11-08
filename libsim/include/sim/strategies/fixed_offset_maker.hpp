@@ -16,14 +16,15 @@
 #ifndef SIM_STRATEGIES_FIXED_OFFSET_MAKER_HPP
 #define SIM_STRATEGIES_FIXED_OFFSET_MAKER_HPP
 
-#include <cstdint>
+#include "sim/strategy.hpp"
+#include "sim/types.hpp"
+
 #include <algorithm>
+#include <cstdint>
 #include <optional>
 #include <unordered_map>
 
 #include "match/types.hpp"
-#include "sim/strategy.hpp"
-#include "sim/types.hpp"
 
 namespace sim {
 
@@ -60,7 +61,7 @@ struct FixedOffsetMakerConfig {
 };
 
 class FixedOffsetMaker final : public Strategy {
-public:
+  public:
     explicit FixedOffsetMaker(FixedOffsetMakerConfig config = {}) : config_(config) {}
 
     void on_book(const BookView& book, OrderGate& gate) override {
@@ -118,7 +119,7 @@ public:
 
     std::int64_t position() const { return position_; }
 
-private:
+  private:
     struct Quote {
         match::OrderId id;
         std::int64_t price;
@@ -141,9 +142,10 @@ private:
         }
 
         if (quote.has_value()) {
-            const std::int64_t drift = quote->price > target ? quote->price - target
-                                                             : target - quote->price;
-            if (drift < config_.requote_threshold) return;  // still good enough; keep the queue slot
+            const std::int64_t drift =
+                quote->price > target ? quote->price - target : target - quote->price;
+            if (drift < config_.requote_threshold)
+                return;  // still good enough; keep the queue slot
             gate.cancel(quote->id);
         }
 

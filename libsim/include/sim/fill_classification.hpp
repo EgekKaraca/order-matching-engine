@@ -16,14 +16,15 @@
 #ifndef SIM_FILL_CLASSIFICATION_HPP
 #define SIM_FILL_CLASSIFICATION_HPP
 
+#include "sim/mid_series.hpp"
+#include "sim/types.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <utility>
 #include <vector>
 
 #include "match/types.hpp"
-#include "sim/mid_series.hpp"
-#include "sim/types.hpp"
 
 namespace sim {
 
@@ -42,8 +43,8 @@ struct FillSplit {
 // Classifies MAKER fills only. A taker chose its own moment, so calling its
 // subsequent loss "adverse selection" would blame the market for the strategy's
 // decision.
-inline FillSplit classify_fills(const std::vector<Fill>& fills,
-                                const MidSeries& mid_x2_series, Nanos horizon) {
+inline FillSplit classify_fills(const std::vector<Fill>& fills, const MidSeries& mid_x2_series,
+                                Nanos horizon) {
     FillSplit split;
     for (const Fill& fill : fills) {
         if (!fill.maker) continue;

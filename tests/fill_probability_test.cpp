@@ -4,19 +4,21 @@
 // numerator alone — an order posted and never filled leaves no trace in it —
 // so without a record of every posted order there is no rate to compute, only
 // a count.
-#include <gtest/gtest.h>
-
-#include <cstdint>
-#include <vector>
-
-#include "match/types.hpp"
-#include "sim/fill_model.hpp"
 #include "sim/fill_probability.hpp"
+
+#include "sim/fill_model.hpp"
 #include "sim/latency.hpp"
 #include "sim/order_tracker.hpp"
 #include "sim/simulator.hpp"
 #include "sim/strategy.hpp"
 #include "sim/types.hpp"
+
+#include <cstdint>
+#include <vector>
+
+#include "match/types.hpp"
+
+#include <gtest/gtest.h>
 
 namespace sim {
 namespace {
@@ -26,7 +28,7 @@ using match::Quantity;
 using match::Side;
 
 class PostOnce : public Strategy {
-public:
+  public:
     PostOnce(Side side, std::int64_t price, std::uint32_t qty)
         : side_(side), price_(price), qty_(qty) {}
 
@@ -38,7 +40,7 @@ public:
 
     const char* name() const override { return "post-once"; }
 
-private:
+  private:
     Side side_;
     std::int64_t price_;
     std::uint32_t qty_;
@@ -53,8 +55,9 @@ MarketEvent add(std::int64_t t, std::uint64_t id, Side side, std::int64_t price,
 
 MarketEvent execute(std::int64_t t, std::uint64_t maker_id, Side maker_side, std::int64_t price,
                     std::uint32_t qty) {
-    return MarketEvent{Time{t},      MarketEventType::Execute, match::OrderId{maker_id},
-                       Price{price}, Quantity{qty},            maker_side};
+    return MarketEvent{
+        Time{t},   MarketEventType::Execute, match::OrderId{maker_id}, Price{price}, Quantity{qty},
+        maker_side};
 }
 
 TEST(OrderTracker, RecordsAnOrderThatNeverFills) {

@@ -12,10 +12,11 @@
 #ifndef SIM_PORTFOLIO_HPP
 #define SIM_PORTFOLIO_HPP
 
+#include "sim/types.hpp"
+
 #include <cstdint>
 
 #include "match/types.hpp"
-#include "sim/types.hpp"
 
 namespace sim {
 
@@ -31,7 +32,7 @@ struct FeeSchedule {
 };
 
 class Portfolio {
-public:
+  public:
     explicit Portfolio(FeeSchedule fees = FeeSchedule::none()) : fees_(fees) {}
 
     void apply(const Fill& fill) {
@@ -74,7 +75,7 @@ public:
         return 2 * cash_ + position_ * mark_mid_x2;
     }
 
-private:
+  private:
     FeeSchedule fees_;
     std::int64_t position_ = 0;
     std::int64_t cash_ = 0;

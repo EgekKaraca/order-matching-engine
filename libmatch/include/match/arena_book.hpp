@@ -65,7 +65,7 @@ constexpr std::uint32_t kNil = 0xFFFFFFFFu;
 // backward-shift deletion would move entries the caller may be holding an
 // index to mid-operation.
 class IdIndex {
-public:
+  public:
     explicit IdIndex(std::size_t capacity_hint = 1u << 12) {
         std::size_t capacity = 16;
         while (capacity < capacity_hint * 2) capacity <<= 1;
@@ -125,7 +125,7 @@ public:
 
     std::size_t size() const { return used_; }
 
-private:
+  private:
     enum class State : std::uint8_t { Empty, Used, Tombstone };
     struct Slot {
         std::uint64_t key = 0;
@@ -166,7 +166,7 @@ private:
 
 template <typename Sink>
 class ArenaBook {
-public:
+  public:
     explicit ArenaBook(Sink sink, std::size_t arena_hint = 1u << 16)
         : sink_(std::move(sink)), index_(arena_hint) {
         nodes_.reserve(arena_hint);
@@ -177,8 +177,8 @@ public:
     void on_new_order(const Order& order) {
         emit(Report::order_ack(order.seq, order.id, order.side, order.price, order.quantity));
 
-        const Quantity residual = sweep(order.side, order.price, order.quantity, order.id,
-                                        order.seq);
+        const Quantity residual =
+            sweep(order.side, order.price, order.quantity, order.id, order.seq);
         if (!residual) return;
 
         if (order.tif == TimeInForce::Ioc) {
@@ -259,13 +259,9 @@ public:
         return removed;
     }
 
-    Price best_bid() const noexcept {
-        return bids_.empty() ? Price::no_bid() : bids_.back().price;
-    }
+    Price best_bid() const noexcept { return bids_.empty() ? Price::no_bid() : bids_.back().price; }
 
-    Price best_ask() const noexcept {
-        return asks_.empty() ? Price::no_ask() : asks_.back().price;
-    }
+    Price best_ask() const noexcept { return asks_.empty() ? Price::no_ask() : asks_.back().price; }
 
     AggregateQuantity depth_at(Price price, Side side) const noexcept {
         const LevelEntry* level = const_cast<ArenaBook*>(this)->level_of(side, price);
@@ -315,7 +311,7 @@ public:
         return counted == index_.size();
     }
 
-private:
+  private:
     // 32 bytes, so two nodes share a cache line and a queue walk touches half
     // as many lines as it otherwise would.
     struct Node {
@@ -355,9 +351,10 @@ private:
 
     LevelEntry* level_of(Side side, Price price) {
         auto& levels = levels_for(side);
-        const auto it = std::lower_bound(
-            levels.begin(), levels.end(), price,
-            [side](const LevelEntry& entry, Price p) { return level_before(entry.price, p, side); });
+        const auto it = std::lower_bound(levels.begin(), levels.end(), price,
+                                         [side](const LevelEntry& entry, Price p) {
+                                             return level_before(entry.price, p, side);
+                                         });
         if (it == levels.end() || it->price != price) return nullptr;
         return &*it;
     }
@@ -380,9 +377,10 @@ private:
 
     void rest(Side side, Price price, OrderId id, Quantity qty) {
         auto& levels = levels_for(side);
-        auto it = std::lower_bound(
-            levels.begin(), levels.end(), price,
-            [side](const LevelEntry& entry, Price p) { return level_before(entry.price, p, side); });
+        auto it = std::lower_bound(levels.begin(), levels.end(), price,
+                                   [side](const LevelEntry& entry, Price p) {
+                                       return level_before(entry.price, p, side);
+                                   });
         if (it == levels.end() || it->price != price) {
             it = levels.insert(it, LevelEntry{price, 0, detail::kNil, detail::kNil});
         }
@@ -410,9 +408,10 @@ private:
         const Side side = nodes_[node].side;
         const Price price = nodes_[node].price;
         auto& levels = levels_for(side);
-        const auto it = std::lower_bound(
-            levels.begin(), levels.end(), price,
-            [side](const LevelEntry& entry, Price p) { return level_before(entry.price, p, side); });
+        const auto it = std::lower_bound(levels.begin(), levels.end(), price,
+                                         [side](const LevelEntry& entry, Price p) {
+                                             return level_before(entry.price, p, side);
+                                         });
         assert(it != levels.end() && it->price == price && "unlinking from a level that is gone");
 
         const std::uint32_t prev = nodes_[node].prev;

@@ -6,16 +6,6 @@
 //
 // What it is honest about: one instrument, one session, no market impact. It
 // is a single-instrument execution backtester, not a portfolio system.
-#include <algorithm>
-#include <cstdint>
-#include <cstdio>
-#include <cstring>
-#include <fstream>
-#include <iostream>
-#include <memory>
-#include <string>
-#include <vector>
-
 #include "adapters/lobster.hpp"
 #include "adapters/lobster_events.hpp"
 #include "sim/fill_model.hpp"
@@ -25,6 +15,16 @@
 #include "sim/strategies/fixed_offset_maker.hpp"
 #include "sim/strategies/momentum_taker.hpp"
 #include "sim/types.hpp"
+
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -216,8 +216,8 @@ int main(int argc, char** argv) {
     std::printf("--- activity ---\n");
     std::printf("orders sent          : %zu (%zu cancels, %zu too late)\n", stats.strategy_submits,
                 stats.strategy_cancels, stats.rejected_cancels);
-    std::printf("fills                : %zu  (%zu passive, %zu aggressive)\n",
-                stats.strategy_fills, stats.maker_fills, stats.taker_fills);
+    std::printf("fills                : %zu  (%zu passive, %zu aggressive)\n", stats.strategy_fills,
+                stats.maker_fills, stats.taker_fills);
     std::printf("shares traded        : %lld\n", static_cast<long long>(report.shares_traded));
     std::printf("round trips          : %lld\n", static_cast<long long>(report.round_trips));
     std::printf("turnover             : $%.0f\n", report.turnover);
@@ -235,8 +235,8 @@ int main(int argc, char** argv) {
     std::printf("stdev of 1s PnL      : $%.2f\n", report.return_stdev);
     std::printf("Sharpe (annualised)  : %.2f  raw\n", report.sharpe_annualised);
     std::printf("Sharpe (deflated)    : %.2f  <- quote this one\n", report.sharpe_deflated);
-    std::printf("  skew %.2f, excess kurtosis %.2f, %zu one-second samples.\n",
-                report.return_skew, report.return_excess_kurtosis, report.samples);
+    std::printf("  skew %.2f, excess kurtosis %.2f, %zu one-second samples.\n", report.return_skew,
+                report.return_excess_kurtosis, report.samples);
     std::printf("  The deflated figure applies the Bailey / Lopez de Prado haircut for a\n");
     std::printf("  short sample and the number of variants tried. Annualising one\n");
     std::printf("  intraday hour to 252 days is still a ~1700x extrapolation.\n");

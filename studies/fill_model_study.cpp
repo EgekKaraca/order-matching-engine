@@ -22,15 +22,6 @@
 //   net PnL          cash + inventory marked to the closing mid, net of fees
 //   queue at fill    size resting ahead when the order was placed. Model A's is
 //                    identically zero; that contrast is the whole intuition.
-#include <algorithm>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <fstream>
-#include <iostream>
-#include <string>
-#include <vector>
-
 #include "adapters/lobster.hpp"
 #include "adapters/lobster_events.hpp"
 #include "sim/fill_model.hpp"
@@ -39,6 +30,15 @@
 #include "sim/simulator.hpp"
 #include "sim/strategies/fixed_offset_maker.hpp"
 #include "sim/types.hpp"
+
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -138,14 +138,14 @@ Result run(sim::FillModel& model, const std::vector<sim::MarketEvent>& events,
     Result result;
     result.model = model.name();
     result.fills = fills.size();
-    result.posted = static_cast<std::int64_t>(simulator.stats().strategy_submits) *
-                    strategy_config.size.units;
+    result.posted =
+        static_cast<std::int64_t>(simulator.stats().strategy_submits) * strategy_config.size.units;
     result.order_size = order_size;
     result.position = simulator.portfolio().position();
     result.fees = simulator.portfolio().fees_paid();
-    result.pnl = static_cast<double>(
-                     simulator.portfolio().pnl_x2(mids.empty() ? 0 : mids.back().second)) /
-                 2.0 / kUnitsPerDollar;
+    result.pnl =
+        static_cast<double>(simulator.portfolio().pnl_x2(mids.empty() ? 0 : mids.back().second)) /
+        2.0 / kUnitsPerDollar;
 
     std::vector<std::int64_t> queue;
     queue.reserve(fills.size());
@@ -165,7 +165,8 @@ Result run(sim::FillModel& model, const std::vector<sim::MarketEvent>& events,
         // selection — the fills that were granted were the ones worth granting
         // to somebody else.
         const auto markout = [&](sim::Nanos horizon) {
-            const double later = static_cast<double>(sim::mid_x2_at(mids, fill.time + horizon)) / 2.0;
+            const double later =
+                static_cast<double>(sim::mid_x2_at(mids, fill.time + horizon)) / 2.0;
             return (later - static_cast<double>(fill.price.ticks)) * sign * qty / kUnitsPerDollar;
         };
         result.markout_1s += markout(sim::seconds(1));
@@ -178,16 +179,15 @@ Result run(sim::FillModel& model, const std::vector<sim::MarketEvent>& events,
 }
 
 void print_table(const std::vector<Result>& results) {
-    std::printf("%-38s %8s %8s %9s %9s %10s %10s %10s %8s %8s\n", "fill model", "fills",
-                "fill%", "spread$", "mo@1s", "mo@10s", "mo@60s", "netPnL$", "qMed", "qP90");
+    std::printf("%-38s %8s %8s %9s %9s %10s %10s %10s %8s %8s\n", "fill model", "fills", "fill%",
+                "spread$", "mo@1s", "mo@10s", "mo@60s", "netPnL$", "qMed", "qP90");
     for (const auto& r : results) {
         const double fill_pct =
-            r.posted == 0 ? 0.0 : 100.0 * static_cast<double>(r.filled) /
-                                      static_cast<double>(r.posted);
+            r.posted == 0 ? 0.0
+                          : 100.0 * static_cast<double>(r.filled) / static_cast<double>(r.posted);
         std::printf("%-38s %8zu %7.2f%% %9.0f %9.0f %10.0f %10.0f %10.0f %8lld %8lld\n",
                     r.model.c_str(), r.fills, fill_pct, r.spread_capture, r.markout_1s,
-                    r.markout_10s, r.markout_60s, r.pnl,
-                    static_cast<long long>(r.queue_median),
+                    r.markout_10s, r.markout_60s, r.pnl, static_cast<long long>(r.queue_median),
                     static_cast<long long>(r.queue_p90));
     }
 }
@@ -238,13 +238,12 @@ int main(int argc, char** argv) {
         std::printf("  queue drained through : %zu fills, %llu shares\n",
                     diagnostic.drained_fills(),
                     static_cast<unsigned long long>(diagnostic.drained_quantity()));
-        std::printf("  market swept the level: %zu fills, %llu shares",
-                    diagnostic.swept_fills(),
+        std::printf("  market swept the level: %zu fills, %llu shares", diagnostic.swept_fills(),
                     static_cast<unsigned long long>(diagnostic.swept_quantity()));
         if (total > 0) {
-            std::printf("  (%.1f%% of fills)",
-                        100.0 * static_cast<double>(diagnostic.swept_fills()) /
-                            static_cast<double>(total));
+            std::printf(
+                "  (%.1f%% of fills)",
+                100.0 * static_cast<double>(diagnostic.swept_fills()) / static_cast<double>(total));
         }
         std::printf("\n");
     }
@@ -309,13 +308,10 @@ int main(int argc, char** argv) {
         const auto ra = run(a, events, seed, offset, 500, size);
         const auto rc = run(c, events, seed, offset, 500, size);
         const double g = ra.pnl == 0.0 ? 0.0 : (ra.pnl - rc.pnl) / std::abs(ra.pnl);
-        const double fraction = median_depth == 0
-                                    ? 0.0
-                                    : static_cast<double>(size) /
-                                          static_cast<double>(median_depth);
+        const double fraction =
+            median_depth == 0 ? 0.0 : static_cast<double>(size) / static_cast<double>(median_depth);
         std::printf("%8u %9.1f%% %12.0f %12.0f %9.1f%% %s\n", size, 100.0 * fraction, ra.pnl,
-                    rc.pnl, 100.0 * g,
-                    fraction <= 0.10 ? "defensible" : "ASSUMPTION STRAINED");
+                    rc.pnl, 100.0 * g, fraction <= 0.10 ? "defensible" : "ASSUMPTION STRAINED");
     }
 
     // --- does the headline survive BOTH axes at once? -----------------------
@@ -426,10 +422,9 @@ int main(int argc, char** argv) {
                 const auto ra = run(a, events, seed, offset, 500, size);
                 const auto rc = run(c, events, seed, offset, 500, size);
                 const double g = ra.pnl == 0.0 ? 0.0 : (ra.pnl - rc.pnl) / std::abs(ra.pnl);
-                const double fraction =
-                    median_depth == 0 ? 0.0
-                                      : static_cast<double>(size) /
-                                            static_cast<double>(median_depth);
+                const double fraction = median_depth == 0 ? 0.0
+                                                          : static_cast<double>(size) /
+                                                                static_cast<double>(median_depth);
                 std::fprintf(f, "%u,%.4f,%.2f,%.2f,%.4f\n", size, fraction, ra.pnl, rc.pnl, g);
             }
             std::fclose(f);

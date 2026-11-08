@@ -112,10 +112,10 @@ void drive(Book& book, const std::vector<Message>& messages) {
         const auto side = static_cast<match::Side>(m.side);
         switch (m.type) {
             case kMsgNew:
-                book.on_new_order(match::Order{
-                    match::OrderId{m.order_id}, match::SeqNum{m.seq}, match::Price{m.price_ticks},
-                    match::Quantity{m.quantity}, side,
-                    m.ioc ? match::TimeInForce::Ioc : match::TimeInForce::Gtc});
+                book.on_new_order(
+                    match::Order{match::OrderId{m.order_id}, match::SeqNum{m.seq},
+                                 match::Price{m.price_ticks}, match::Quantity{m.quantity}, side,
+                                 m.ioc ? match::TimeInForce::Ioc : match::TimeInForce::Gtc});
                 break;
             case kMsgCancel:
                 book.on_cancel(match::SeqNum{m.seq}, match::OrderId{m.order_id});
@@ -182,8 +182,8 @@ int main(int argc, char** argv) {
     // 38131 cancel-rejects, 7818 modify-rejects.
     std::size_t by_type[6] = {};
     for (const auto& r : reports) ++by_type[static_cast<std::size_t>(r.type)];
-    static const char* kNames[] = {"OrderAck",     "Trade",        "CancelAck",
-                                   "ModifyAck",    "CancelReject", "ModifyReject"};
+    static const char* kNames[] = {"OrderAck",  "Trade",        "CancelAck",
+                                   "ModifyAck", "CancelReject", "ModifyReject"};
     std::cout << "reports: " << reports.size() << '\n';
     for (std::size_t i = 0; i < 6; ++i) {
         std::cout << "  " << kNames[i] << ": " << by_type[i] << '\n';
@@ -208,8 +208,8 @@ int main(int argc, char** argv) {
     // figures: those are measured by the harness on Graviton4, open-loop and
     // coordinated-omission-free, and include report transport. This is a
     // stopwatch around a loop with an in-process vector sink.
-    std::cout << "engine=" << engine << " matched " << messages.size() << " messages in "
-              << seconds << "s = "
+    std::cout << "engine=" << engine << " matched " << messages.size() << " messages in " << seconds
+              << "s = "
               << (seconds > 0 ? static_cast<double>(messages.size()) / seconds / 1e6 : 0.0)
               << " M msg/s (LOCAL, not the harness number)\n";
     return 0;

@@ -70,20 +70,14 @@ using AggregateQuantity = std::uint64_t;  // engine_query_depth_at returns this
 enum class OrderId : std::uint64_t {};
 enum class SeqNum : std::uint64_t {};
 
-constexpr std::uint64_t value_of(OrderId id) noexcept {
-    return static_cast<std::uint64_t>(id);
-}
-constexpr std::uint64_t value_of(SeqNum seq) noexcept {
-    return static_cast<std::uint64_t>(seq);
-}
+constexpr std::uint64_t value_of(OrderId id) noexcept { return static_cast<std::uint64_t>(id); }
+constexpr std::uint64_t value_of(SeqNum seq) noexcept { return static_cast<std::uint64_t>(seq); }
 
 // Encoded to match the ABI's `uint8_t side` (0 = buy, 1 = sell) so the adapter
 // is a cast, not a lookup table.
 enum class Side : std::uint8_t { Buy = 0, Sell = 1 };
 
-constexpr Side opposite(Side s) noexcept {
-    return s == Side::Buy ? Side::Sell : Side::Buy;
-}
+constexpr Side opposite(Side s) noexcept { return s == Side::Buy ? Side::Sell : Side::Buy; }
 
 enum class TimeInForce : std::uint8_t {
     Gtc = 0,  // rests until filled or cancelled

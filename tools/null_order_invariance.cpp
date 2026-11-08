@@ -19,6 +19,8 @@
 // row. Any divergence is a bug in the aggressor path, and it must be fixed
 // before anything is injected: after injection there is no longer a reference
 // to compare against, so this is the last moment the question can be settled.
+#include "adapters/lobster.hpp"
+
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -26,7 +28,6 @@
 #include <string>
 #include <vector>
 
-#include "adapters/lobster.hpp"
 #include "match/map_book.hpp"
 #include "match/report.hpp"
 #include "match/types.hpp"
@@ -172,8 +173,7 @@ int main(int argc, char** argv) {
             if (first_divergence == 0) {
                 first_divergence = rows;
                 std::printf("first divergence at row %zu (message type %d, order %llu)\n", rows,
-                            static_cast<int>(m.type),
-                            static_cast<unsigned long long>(m.order_id));
+                            static_cast<int>(m.type), static_cast<unsigned long long>(m.order_id));
                 for (std::size_t i = 0; i < 4; ++i) {
                     std::printf("  level 1 col %zu: reduction=%lld aggressor=%lld\n", i,
                                 static_cast<long long>(left[i]), static_cast<long long>(right[i]));

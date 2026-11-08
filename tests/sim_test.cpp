@@ -2,13 +2,6 @@
 // ones that, if wrong, produce a plausible-looking backtest that is simply
 // false: latency being real, fills being earned rather than assumed, and the
 // strategy being unable to see the future.
-#include <gtest/gtest.h>
-
-#include <cstdlib>
-#include <cstdint>
-#include <vector>
-
-#include "match/types.hpp"
 #include "sim/fill_model.hpp"
 #include "sim/latency.hpp"
 #include "sim/performance.hpp"
@@ -18,6 +11,14 @@
 #include "sim/strategies/fixed_offset_maker.hpp"
 #include "sim/strategy.hpp"
 #include "sim/types.hpp"
+
+#include <cstdint>
+#include <cstdlib>
+#include <vector>
+
+#include "match/types.hpp"
+
+#include <gtest/gtest.h>
 
 namespace sim {
 namespace {
@@ -29,7 +30,7 @@ using match::Side;
 // A strategy that posts one order the first time it is called and then does
 // nothing, so a test can control exactly what is in the book.
 class OneShot : public Strategy {
-public:
+  public:
     OneShot(Side side, std::int64_t price, std::uint32_t qty)
         : side_(side), price_(price), qty_(qty) {}
 
@@ -50,7 +51,7 @@ public:
     std::vector<BookView> views;
     std::vector<Fill> seen_fills;
 
-private:
+  private:
     Side side_;
     std::int64_t price_;
     std::uint32_t qty_;
@@ -59,14 +60,15 @@ private:
 
 MarketEvent add(std::int64_t t, std::uint64_t id, Side side, std::int64_t price,
                 std::uint32_t qty) {
-    return MarketEvent{Time{t},        MarketEventType::Add, match::OrderId{id},
+    return MarketEvent{Time{t},      MarketEventType::Add, match::OrderId{id},
                        Price{price}, Quantity{qty},        side};
 }
 
 MarketEvent execute(std::int64_t t, std::uint64_t maker_id, Side maker_side, std::int64_t price,
                     std::uint32_t qty) {
-    return MarketEvent{Time{t},      MarketEventType::Execute, match::OrderId{maker_id},
-                       Price{price}, Quantity{qty},            maker_side};
+    return MarketEvent{
+        Time{t},   MarketEventType::Execute, match::OrderId{maker_id}, Price{price}, Quantity{qty},
+        maker_side};
 }
 
 MarketEvent cancel(std::int64_t t, std::uint64_t id, Side side, std::int64_t price,
@@ -252,7 +254,7 @@ TEST(Injection, StrategyOrdersDoNotDisturbTheHistoricalBookTheyDoNotTouch) {
 // A strategy that crosses the spread once, so the taker path can be driven
 // deterministically.
 class OneShotTaker : public Strategy {
-public:
+  public:
     OneShotTaker(Side side, std::int64_t limit, std::uint32_t qty)
         : side_(side), limit_(limit), qty_(qty) {}
 
@@ -267,7 +269,7 @@ public:
     const char* name() const override { return "one-shot taker"; }
     match::OrderId id{};
 
-private:
+  private:
     Side side_;
     std::int64_t limit_;
     std::uint32_t qty_;
@@ -373,7 +375,7 @@ TEST(Taker, RespectsItsLimitPrice) {
 
 namespace {
 class AlwaysCrowdsOut final : public ReactionModel {
-public:
+  public:
     bool crowds_out(Time, Side, Price, match::AggregateQuantity,
                     match::AggregateQuantity) override {
         return true;
@@ -612,9 +614,8 @@ TEST(Performance, HitRateCountsFillsThatWereRightAfterwards) {
 }
 
 TEST(Performance, TimeInMarketIgnoresFlatSamples) {
-    const std::vector<Fill> fills{
-        Fill{Time{seconds(2).count}, match::OrderId{1}, Side::Buy, Price{100}, Quantity{10}, true,
-             0}};
+    const std::vector<Fill> fills{Fill{Time{seconds(2).count}, match::OrderId{1}, Side::Buy,
+                                       Price{100}, Quantity{10}, true, 0}};
     const auto mids = flat_mids(200, 4);
 
     const PerformanceAnalyzer analyzer(fills, mids, 1.0, /*trials=*/1);
@@ -745,9 +746,9 @@ TEST(FixedOffsetMaker, StopsQuotingASideAtItsPositionLimit) {
     EXPECT_EQ(gate.submits().size(), 2u) << "both sides at a flat position";
 
     // Fill the buy side past the limit, then the strategy should stop bidding.
-    strategy.on_fill(Fill{Time{1}, gate.submits()[0].id, Side::Buy, Price{100}, Quantity{10}, true,
-                          0},
-                     view, gate);
+    strategy.on_fill(
+        Fill{Time{1}, gate.submits()[0].id, Side::Buy, Price{100}, Quantity{10}, true, 0}, view,
+        gate);
     ASSERT_EQ(strategy.position(), 10);
 
     gate.clear();

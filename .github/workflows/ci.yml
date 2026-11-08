@@ -77,6 +77,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: clang-format
         run: |
-          find libmatch libsim adapters studies tests \
+          find libmatch libsim adapters studies tests tools \
             -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \
             | xargs --no-run-if-empty clang-format --dry-run --Werror

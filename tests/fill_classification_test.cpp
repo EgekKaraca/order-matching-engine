@@ -7,14 +7,15 @@
 // were given precisely because they were about to be wrong.
 #include "sim/fill_classification.hpp"
 
-#include <gtest/gtest.h>
+#include "sim/types.hpp"
 
 #include <cstdint>
 #include <utility>
 #include <vector>
 
 #include "match/types.hpp"
-#include "sim/types.hpp"
+
+#include <gtest/gtest.h>
 
 namespace sim {
 namespace {

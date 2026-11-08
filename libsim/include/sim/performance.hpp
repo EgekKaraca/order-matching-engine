@@ -19,31 +19,31 @@
 #ifndef SIM_PERFORMANCE_HPP
 #define SIM_PERFORMANCE_HPP
 
+#include "sim/deflated_sharpe.hpp"
+#include "sim/mid_series.hpp"
+#include "sim/types.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <vector>
-
-#include "sim/deflated_sharpe.hpp"
-#include "sim/mid_series.hpp"
-#include "sim/types.hpp"
 
 namespace sim {
 
 struct PerformanceReport {
     // Money, in the price units the run used.
     double net_pnl = 0.0;
-    double max_drawdown = 0.0;   // largest peak-to-trough fall in mark-to-market equity
+    double max_drawdown = 0.0;  // largest peak-to-trough fall in mark-to-market equity
     double peak_equity = 0.0;
     double trough_equity = 0.0;
 
     // Activity.
     std::size_t fills = 0;
     std::int64_t shares_traded = 0;
-    std::int64_t round_trips = 0;   // completed buy+sell pairs, by matched shares
-    double turnover = 0.0;          // total traded notional
+    std::int64_t round_trips = 0;  // completed buy+sell pairs, by matched shares
+    double turnover = 0.0;         // total traded notional
     std::int64_t max_abs_position = 0;
-    double time_in_market = 0.0;    // fraction of samples with a non-zero position
+    double time_in_market = 0.0;  // fraction of samples with a non-zero position
 
     // Risk-adjusted. See the header note before quoting the Sharpe.
     double return_stdev = 0.0;
@@ -56,8 +56,8 @@ struct PerformanceReport {
     std::size_t samples = 0;
 
     // Per-fill economics.
-    double hit_rate = 0.0;      // fraction of fills with a positive mark-out
-    double avg_markout = 0.0;   // mean mark-out per fill at the chosen horizon
+    double hit_rate = 0.0;     // fraction of fills with a positive mark-out
+    double avg_markout = 0.0;  // mean mark-out per fill at the chosen horizon
 };
 
 // One point on the equity curve: mark-to-market wealth at a sampled instant.
@@ -71,7 +71,7 @@ struct EquityPoint {
 // series. Kept separate from the Simulator because it reads the FUTURE of every
 // fill — legitimate for an analyst, forbidden for a strategy.
 class PerformanceAnalyzer {
-public:
+  public:
     // `trials` is how many strategy variants or parameter settings were
     // evaluated before this result was reported. It is a REQUIRED argument
     // rather than a defaulted one: leaving it defaulted made every caller
@@ -183,9 +183,8 @@ public:
 
             const double sign = fill.side == match::Side::Buy ? 1.0 : -1.0;
             const double later = static_cast<double>(mid_at(fill.time + markout_horizon)) / 2.0;
-            const double markout =
-                (later - static_cast<double>(fill.price.ticks)) * sign * static_cast<double>(qty) /
-                scale_;
+            const double markout = (later - static_cast<double>(fill.price.ticks)) * sign *
+                                   static_cast<double>(qty) / scale_;
             markout_total += markout;
             if (markout > 0.0) ++positive;
         }
@@ -198,7 +197,7 @@ public:
         return report;
     }
 
-private:
+  private:
     std::int64_t mid_at(Time when) const { return mid_x2_at(mids_, when); }
 
     const std::vector<Fill>& fills_;

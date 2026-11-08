@@ -1,7 +1,5 @@
 #include "match/canonical.hpp"
 
-#include <gtest/gtest.h>
-
 #include <algorithm>
 #include <limits>
 #include <sstream>
@@ -10,6 +8,8 @@
 
 #include "match/report.hpp"
 #include "match/types.hpp"
+
+#include <gtest/gtest.h>
 
 namespace match {
 namespace {
@@ -31,8 +31,8 @@ TEST(CanonicalLine, OrderAck) {
 }
 
 TEST(CanonicalLine, TradeCarriesMakerPriceAndAggressorSeq) {
-    EXPECT_EQ(canonical::line(Report::trade(SeqNum{12}, Price{33500}, Quantity{40}, OrderId{7},
-                                            OrderId{99})),
+    EXPECT_EQ(canonical::line(
+                  Report::trade(SeqNum{12}, Price{33500}, Quantity{40}, OrderId{7}, OrderId{99})),
               "1,12,33500,40,7,99");
 }
 
@@ -55,13 +55,13 @@ TEST(CanonicalLine, RejectsCarryIdentityOnly) {
 TEST(CanonicalLine, HandlesNegativeAndExtremePrices) {
     // Ticks are signed, and the conformance battery includes a price near the
     // representational ceiling.
-    EXPECT_EQ(canonical::line(Report::order_ack(SeqNum{0}, OrderId{1}, Side::Buy, Price{-250},
-                                                Quantity{1})),
+    EXPECT_EQ(canonical::line(
+                  Report::order_ack(SeqNum{0}, OrderId{1}, Side::Buy, Price{-250}, Quantity{1})),
               "0,0,0,1,-250,1");
 
     const auto huge = std::numeric_limits<std::int64_t>::max();
-    EXPECT_EQ(canonical::line(Report::order_ack(SeqNum{0}, OrderId{1}, Side::Buy, Price{huge},
-                                                Quantity{1})),
+    EXPECT_EQ(canonical::line(
+                  Report::order_ack(SeqNum{0}, OrderId{1}, Side::Buy, Price{huge}, Quantity{1})),
               "0,0,0,1,9223372036854775807,1");
 }
 
@@ -110,9 +110,7 @@ TEST(CanonicalText, HasNoTrailingNewline) {
     EXPECT_NE(text.back(), '\n');
 }
 
-TEST(CanonicalText, EmptyStreamIsEmpty) {
-    EXPECT_EQ(text_of({}), "");
-}
+TEST(CanonicalText, EmptyStreamIsEmpty) { EXPECT_EQ(text_of({}), ""); }
 
 TEST(CanonicalText, SurvivesABufferFlushBoundary) {
     // The writer flushes in 32 KiB chunks; a line straddling that boundary

@@ -12,12 +12,10 @@
 // consult and it only reports that something differs. This narrows a
 // divergence to one message on a sequence of a few hundred, which is the
 // difference between a fix and an afternoon.
-#include <gtest/gtest.h>
-
 #include <cstdint>
 #include <random>
-#include <unordered_map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "match/arena_book.hpp"
@@ -25,6 +23,8 @@
 #include "match/map_book.hpp"
 #include "match/report.hpp"
 #include "match/types.hpp"
+
+#include <gtest/gtest.h>
 
 namespace match {
 namespace {
@@ -41,7 +41,7 @@ constexpr std::int64_t kMinPrice = 95;
 constexpr std::int64_t kMaxPrice = 105;
 
 class Differ {
-public:
+  public:
     explicit Differ(std::uint64_t seed) : rng_(seed) {}
 
     void run(std::size_t messages) {
@@ -61,7 +61,7 @@ public:
         EXPECT_GT(rejects_, 10u) << "the reject path went unexercised";
     }
 
-private:
+  private:
     void step() {
         const std::int64_t roll = uniform(0, 99);
         const SeqNum seq{next_seq_++};

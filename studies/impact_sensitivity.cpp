@@ -9,14 +9,6 @@
 // watch the gap. If the gap is stable, the headline is robust to the
 // assumption. If it collapses, the headline was an artefact of it. Either
 // answer is worth having and only one of them is comfortable.
-#include <algorithm>
-#include <cstdint>
-#include <cstdio>
-#include <fstream>
-#include <iostream>
-#include <string>
-#include <vector>
-
 #include "adapters/lobster.hpp"
 #include "adapters/lobster_events.hpp"
 #include "sim/fill_model.hpp"
@@ -25,6 +17,14 @@
 #include "sim/simulator.hpp"
 #include "sim/strategies/fixed_offset_maker.hpp"
 #include "sim/types.hpp"
+
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -120,8 +120,8 @@ int main(int argc, char** argv) {
                 order_size);
     std::printf("impact-free replay. Higher values mean historical participants\n");
     std::printf("increasingly decline to queue behind the strategy.\n\n");
-    std::printf("%10s %12s %12s %10s %10s %12s\n", "intensity", "PnL_A", "PnL_C", "gap",
-                "C fills", "crowded out");
+    std::printf("%10s %12s %12s %10s %10s %12s\n", "intensity", "PnL_A", "PnL_C", "gap", "C fills",
+                "crowded out");
 
     std::vector<std::string> rows;
     for (const double intensity : {0.0, 0.25, 0.5, 1.0, 2.0}) {

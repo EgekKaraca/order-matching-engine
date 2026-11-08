@@ -13,17 +13,17 @@
 #ifndef SIM_FILL_PROBABILITY_HPP
 #define SIM_FILL_PROBABILITY_HPP
 
+#include "sim/order_tracker.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 
-#include "sim/order_tracker.hpp"
-
 namespace sim {
 
 class FillSurface {
-public:
+  public:
     // Four queue-position bins and three opposite-depth bins. Deliberately
     // coarse: the sample is one hour, and a finer grid would produce cells with
     // single-digit counts and a fill rate that is noise with a decimal point on
@@ -77,7 +77,7 @@ public:
         return kLabels[index];
     }
 
-private:
+  private:
     std::array<std::array<Cell, kDepthBins>, kQueueBins> cells_{};
 };
 

@@ -25,8 +25,8 @@ std::string_view next_field(std::string_view& rest, bool& ok) {
 
 void trim(std::string_view& s) {
     while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.remove_prefix(1);
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' ||
-                          s.back() == '\n')) {
+    while (!s.empty() &&
+           (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\n')) {
         s.remove_suffix(1);
     }
 }

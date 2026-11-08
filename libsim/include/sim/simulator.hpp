@@ -21,6 +21,14 @@
 #ifndef SIM_SIMULATOR_HPP
 #define SIM_SIMULATOR_HPP
 
+#include "sim/fill_model.hpp"
+#include "sim/latency.hpp"
+#include "sim/order_tracker.hpp"
+#include "sim/portfolio.hpp"
+#include "sim/reaction.hpp"
+#include "sim/strategy.hpp"
+#include "sim/types.hpp"
+
 #include <cstdint>
 #include <deque>
 #include <queue>
@@ -31,13 +39,6 @@
 #include "match/map_book.hpp"
 #include "match/report.hpp"
 #include "match/types.hpp"
-#include "sim/fill_model.hpp"
-#include "sim/latency.hpp"
-#include "sim/order_tracker.hpp"
-#include "sim/reaction.hpp"
-#include "sim/portfolio.hpp"
-#include "sim/strategy.hpp"
-#include "sim/types.hpp"
 
 namespace sim {
 
@@ -65,7 +66,7 @@ struct SimulatorStats {
 };
 
 class Simulator {
-public:
+  public:
     // `fill_model` decides whether a strategy order fills. Pass L3ExactFill to
     // let the engine decide; the other models answer a counterfactual and
     // deliberately keep the strategy's orders out of the book.
@@ -106,7 +107,7 @@ public:
     // measured rather than asserted.
     const std::vector<match::AggregateQuantity>& touch_depths() const { return touch_depths_; }
 
-private:
+  private:
     struct PendingSubmit {
         Time arrival;
         match::Side side;
@@ -147,8 +148,7 @@ private:
 
     void on_report(const match::Report& report);
     void record_fill(match::OrderId id, match::Side side, match::Price price,
-                     match::Quantity quantity, match::AggregateQuantity ahead_at_entry,
-                     bool maker);
+                     match::Quantity quantity, match::AggregateQuantity ahead_at_entry, bool maker);
     void apply_model_fills(const MarketEvent& event);
     void deliver_due(Time now);
     void release_orders(Time now);

@@ -19,8 +19,6 @@
 // while the reports still look plausible. It is a test-side model on purpose;
 // the ABI adapter deliberately has no such shadow, because a shadow answering
 // the audit queries would mask the engine rather than expose it.
-#include <gtest/gtest.h>
-
 #include <array>
 #include <cstdint>
 #include <map>
@@ -31,6 +29,8 @@
 #include "match/map_book.hpp"
 #include "match/report.hpp"
 #include "match/types.hpp"
+
+#include <gtest/gtest.h>
 
 namespace match {
 namespace {
@@ -50,7 +50,7 @@ struct Tracked {
 };
 
 class Ledger {
-public:
+  public:
     // --- what the reports say ------------------------------------------------
 
     void on_rested(OrderId id, Side side, Price price, Quantity qty) {
@@ -115,7 +115,7 @@ public:
         return out;
     }
 
-private:
+  private:
     std::unordered_map<OrderId, Tracked> orders_;
     std::uint64_t next_arrival_ = 0;
 };
@@ -129,7 +129,7 @@ struct Totals {
 };
 
 class Fuzzer {
-public:
+  public:
     explicit Fuzzer(std::uint64_t seed) : rng_(seed) {}
 
     void run(std::size_t messages) {
@@ -142,7 +142,7 @@ public:
         check_coverage();
     }
 
-private:
+  private:
     // --- message generation --------------------------------------------------
 
     void step() {
@@ -164,7 +164,8 @@ private:
         OrderId id{next_id_++};
         if (uniform(0, 9) == 0) {
             const auto dead = ledger_.dead_ids();
-            if (!dead.empty()) id = dead[static_cast<std::size_t>(uniform(0, int(dead.size()) - 1))];
+            if (!dead.empty())
+                id = dead[static_cast<std::size_t>(uniform(0, int(dead.size()) - 1))];
         }
 
         const Side side = uniform(0, 1) == 0 ? Side::Buy : Side::Sell;
@@ -218,8 +219,8 @@ private:
     void do_modify() {
         const OrderId id = pick_id();
         const bool was_live = ledger_.is_live(id);
-        const Side side = was_live ? ledger_.find(id)->side
-                                   : (uniform(0, 1) == 0 ? Side::Buy : Side::Sell);
+        const Side side =
+            was_live ? ledger_.find(id)->side : (uniform(0, 1) == 0 ? Side::Buy : Side::Sell);
         const Price price{uniform(kMinPrice, kMaxPrice)};
         const Quantity qty{static_cast<std::uint32_t>(uniform(1, 50))};
 

@@ -23,12 +23,13 @@
 #ifndef SIM_STRATEGY_HPP
 #define SIM_STRATEGY_HPP
 
+#include "sim/types.hpp"
+
 #include <cstdint>
 #include <optional>
 #include <vector>
 
 #include "match/types.hpp"
-#include "sim/types.hpp"
 
 namespace sim {
 
@@ -37,7 +38,7 @@ namespace sim {
 // it is visible deliberately — a strategy is allowed to know how stale its own
 // data is, because a real one does.
 class BookView {
-public:
+  public:
     BookView() = default;
     BookView(Time as_of, Time now, match::Price best_bid, match::AggregateQuantity bid_size,
              match::Price best_ask, match::AggregateQuantity ask_size)
@@ -73,7 +74,7 @@ public:
         return best_ask_.ticks - best_bid_.ticks;
     }
 
-private:
+  private:
     Time as_of_{};
     Time now_{};
     match::Price best_bid_ = match::Price::no_bid();
@@ -87,7 +88,7 @@ private:
 // arrival time, no way to cancel retroactively, no way to ask what happened
 // next.
 class OrderGate {
-public:
+  public:
     struct Submit {
         match::Side side;
         match::Price price;
@@ -128,14 +129,14 @@ public:
     }
     void set_next_id(std::uint64_t id) { next_id_ = id; }
 
-private:
+  private:
     std::vector<Submit> submits_;
     std::vector<match::OrderId> cancels_;
     std::uint64_t next_id_ = 0;
 };
 
 class Strategy {
-public:
+  public:
     virtual ~Strategy() = default;
 
     // Called when a book update becomes visible at the strategy's feed clock.

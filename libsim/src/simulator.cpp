@@ -94,9 +94,8 @@ void Simulator::on_market_event(const MarketEvent& event) {
 
     switch (event.type) {
         case MarketEventType::Add:
-            book_.on_new_order(match::Order{event.id, match::SeqNum{0}, event.price,
-                                            event.quantity, event.side,
-                                            match::TimeInForce::Gtc});
+            book_.on_new_order(match::Order{event.id, match::SeqNum{0}, event.price, event.quantity,
+                                            event.side, match::TimeInForce::Gtc});
             break;
 
         case MarketEventType::Reduce:
@@ -118,10 +117,9 @@ void Simulator::on_market_event(const MarketEvent& event) {
             //
             // IOC, because an execution consumes what is there and leaves
             // nothing resting; a GTC residual would invent liquidity.
-            book_.on_new_order(match::Order{match::OrderId{config_.aggressor_id},
-                                            match::SeqNum{0}, event.price, event.quantity,
-                                            match::opposite(event.side),
-                                            match::TimeInForce::Ioc});
+            book_.on_new_order(match::Order{match::OrderId{config_.aggressor_id}, match::SeqNum{0},
+                                            event.price, event.quantity,
+                                            match::opposite(event.side), match::TimeInForce::Ioc});
             break;
         }
     }
@@ -285,8 +283,7 @@ void Simulator::release_orders(Time now) {
             in_flight_ = submit.id;
             in_flight_active_ = true;
             book_.on_new_order(match::Order{submit.id, match::SeqNum{0}, submit.price,
-                                            submit.quantity, submit.side,
-                                            match::TimeInForce::Ioc});
+                                            submit.quantity, submit.side, match::TimeInForce::Ioc});
             in_flight_active_ = false;
             order_sides_.erase(submit.id);
             // IOC never rests, so it is retired the moment it is done.
@@ -297,8 +294,7 @@ void Simulator::release_orders(Time now) {
 
         if (fill_model_.uses_engine()) {
             book_.on_new_order(match::Order{submit.id, match::SeqNum{0}, submit.price,
-                                            submit.quantity, submit.side,
-                                            match::TimeInForce::Gtc});
+                                            submit.quantity, submit.side, match::TimeInForce::Gtc});
             const auto ahead = book_.quantity_ahead(submit.id);
             if (ahead.has_value()) {
                 live_orders_[submit.id] = *ahead;
@@ -372,7 +368,7 @@ void Simulator::publish_snapshot(Time as_of) {
 }
 
 BookView Simulator::current_view(Time now) const {
-    return BookView{last_view_.as_of(),  now,
+    return BookView{last_view_.as_of(),    now,
                     last_view_.best_bid(), last_view_.bid_size(),
                     last_view_.best_ask(), last_view_.ask_size()};
 }
@@ -382,8 +378,8 @@ void Simulator::deliver_due(Time now) {
     while (!feed_queue_.empty() && feed_queue_.front().visible_at <= now) {
         const auto update = feed_queue_.front();
         feed_queue_.pop_front();
-        last_view_ = BookView{update.as_of,   now,          update.best_bid,
-                              update.bid_size, update.best_ask, update.ask_size};
+        last_view_ = BookView{
+            update.as_of, now, update.best_bid, update.bid_size, update.best_ask, update.ask_size};
         book_changed = true;
     }
 
@@ -426,8 +422,7 @@ void Simulator::schedule_from_gate(Time decided_at) {
         ++stats_.strategy_submits;
     }
     for (const match::OrderId id : gate_.cancels()) {
-        pending_cancels_.push_back(
-            PendingCancel{decided_at + order_delay_.sample(decided_at), id});
+        pending_cancels_.push_back(PendingCancel{decided_at + order_delay_.sample(decided_at), id});
         ++stats_.strategy_cancels;
     }
     gate_.clear();
@@ -435,14 +430,12 @@ void Simulator::schedule_from_gate(Time decided_at) {
     // A variable delay can invert arrival order, so both queues are kept
     // sorted by arrival rather than by submission. Stable, so two actions
     // drawing the same delay keep the order the strategy issued them in.
-    std::stable_sort(pending_submits_.begin(), pending_submits_.end(),
-                     [](const PendingSubmit& a, const PendingSubmit& b) {
-                         return a.arrival < b.arrival;
-                     });
-    std::stable_sort(pending_cancels_.begin(), pending_cancels_.end(),
-                     [](const PendingCancel& a, const PendingCancel& b) {
-                         return a.arrival < b.arrival;
-                     });
+    std::stable_sort(
+        pending_submits_.begin(), pending_submits_.end(),
+        [](const PendingSubmit& a, const PendingSubmit& b) { return a.arrival < b.arrival; });
+    std::stable_sort(
+        pending_cancels_.begin(), pending_cancels_.end(),
+        [](const PendingCancel& a, const PendingCancel& b) { return a.arrival < b.arrival; });
 }
 
 void Simulator::finish() {

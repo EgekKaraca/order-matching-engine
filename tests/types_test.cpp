@@ -1,8 +1,8 @@
 #include "match/types.hpp"
 
-#include <gtest/gtest.h>
-
 #include <limits>
+
+#include <gtest/gtest.h>
 
 namespace match {
 namespace {

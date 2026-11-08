@@ -17,14 +17,6 @@
 // different venue, a different year, one hour against two weeks. The SIGNS and
 // the ORDERING of effects are comparable. The magnitudes are not, and this file
 // does not compare them.
-#include <algorithm>
-#include <cstdint>
-#include <cstdio>
-#include <fstream>
-#include <iostream>
-#include <string>
-#include <vector>
-
 #include "adapters/lobster.hpp"
 #include "adapters/lobster_events.hpp"
 #include "sim/fill_classification.hpp"
@@ -35,6 +27,14 @@
 #include "sim/simulator.hpp"
 #include "sim/strategies/fixed_offset_maker.hpp"
 #include "sim/types.hpp"
+
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <vector>
 
 namespace {
 constexpr std::size_t kLevels = 50;

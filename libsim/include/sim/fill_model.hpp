@@ -18,6 +18,8 @@
 #ifndef SIM_FILL_MODEL_HPP
 #define SIM_FILL_MODEL_HPP
 
+#include "sim/types.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -25,13 +27,12 @@
 #include <vector>
 
 #include "match/types.hpp"
-#include "sim/types.hpp"
 
 namespace sim {
 
 // Read-only access to the historical book, for models that need depth.
 class BookProbe {
-public:
+  public:
     virtual ~BookProbe() = default;
     virtual match::AggregateQuantity depth_at(match::Price price, match::Side side) const = 0;
     virtual match::Price best_bid() const = 0;
@@ -45,7 +46,7 @@ struct ModelFill {
 };
 
 class FillModel {
-public:
+  public:
     virtual ~FillModel() = default;
 
     // True when the strategy's orders are inserted into the real book and the
@@ -73,7 +74,7 @@ public:
 // A pass-through. The engine holds the orders and reports the fills; this
 // exists so the three models present one interface to the simulator.
 class L3ExactFill final : public FillModel {
-public:
+  public:
     bool uses_engine() const override { return true; }
     void on_placed(match::OrderId, match::Side, match::Price, match::Quantity,
                    const BookProbe&) override {}
@@ -93,7 +94,7 @@ public:
 // A backtester that fills the whole order on any trade at its price would show
 // a larger gap, and the conservative choice is the defensible one.
 class NaiveFill final : public FillModel {
-public:
+  public:
     bool uses_engine() const override { return false; }
 
     void on_placed(match::OrderId id, match::Side side, match::Price price,
@@ -131,7 +132,7 @@ public:
 
     const char* name() const override { return "A: naive (filled at the touch)"; }
 
-private:
+  private:
     struct Resting {
         match::Side side;
         match::Price price;
@@ -189,7 +190,7 @@ private:
 // variance that would otherwise have to be averaged away over many seeds,
 // which would confound the very comparison being made.
 class ProbQueueFill final : public FillModel {
-public:
+  public:
     explicit ProbQueueFill(double exponent = 1.0) : exponent_(exponent) {}
 
     bool uses_engine() const override { return false; }
@@ -206,8 +207,8 @@ public:
     void on_event(const MarketEvent& event, const BookProbe& book,
                   std::vector<ModelFill>& out) override {
         const bool is_trade = event.type == MarketEventType::Execute;
-        const bool is_reduction = event.type == MarketEventType::Reduce ||
-                                  event.type == MarketEventType::Delete;
+        const bool is_reduction =
+            event.type == MarketEventType::Reduce || event.type == MarketEventType::Delete;
         if (!is_trade && !is_reduction) return;
 
         for (auto& [id, order] : orders_) {
@@ -284,9 +285,8 @@ public:
                 const double f_back = weight(behind);
                 const double from_front =
                     (f_front + f_back) <= 0.0 ? 0.0 : f_front / (f_front + f_back);
-                order.ahead =
-                    std::max(0.0, order.ahead - static_cast<double>(event.quantity.units) *
-                                                    from_front);
+                order.ahead = std::max(
+                    0.0, order.ahead - static_cast<double>(event.quantity.units) * from_front);
             }
         }
         erase_empty();
@@ -297,11 +297,9 @@ public:
         return it == orders_.end() ? 0 : static_cast<match::AggregateQuantity>(it->second.ahead);
     }
 
-    const char* name() const override {
-        return "B: L2 probabilistic (EXPERIMENTAL, excluded)";
-    }
+    const char* name() const override { return "B: L2 probabilistic (EXPERIMENTAL, excluded)"; }
 
-private:
+  private:
     struct Resting {
         match::Side side;
         match::Price price;
@@ -309,7 +307,7 @@ private:
         double ahead;
     };
 
-public:
+  public:
     // Diagnostics, exposed because this model is EXPERIMENTAL and the open
     // question is which of its two fill paths is misbehaving. A fill either
     // comes from the queue ahead draining away, or from the market trading
@@ -320,7 +318,7 @@ public:
     std::uint64_t swept_quantity() const { return swept_quantity_; }
     std::uint64_t drained_quantity() const { return drained_quantity_; }
 
-private:
+  private:
     double weight(double x) const { return std::pow(std::max(0.0, x), exponent_); }
 
     void erase_empty() {

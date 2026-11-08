@@ -15,16 +15,15 @@
 //
 // It is NOT the harness: single-threaded, untimed, no anti-cheat, no
 // random-point state audit against a baseline engine.
-#include <dlfcn.h>
+#include "matching_engine_api.h"
 
 #include <cstdint>
 #include <cstring>
+#include <dlfcn.h>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
-
-#include "matching_engine_api.h"
 
 #include "match/canonical.hpp"
 #include "match/report.hpp"
@@ -109,8 +108,8 @@ std::uint32_t transport_drain(void*, me_report_t*, std::uint32_t) {
 void transport_flush(void*) {}
 void transport_destroy(void*) {}
 
-const me_transport_t kTransport{transport_create, transport_push, transport_drain,
-                                transport_flush, transport_destroy};
+const me_transport_t kTransport{transport_create, transport_push, transport_drain, transport_flush,
+                                transport_destroy};
 
 template <typename Fn>
 Fn* required_symbol(void* handle, const char* name) {
@@ -135,8 +134,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    auto* init = required_symbol<void(std::uint64_t, const me_transport_t*, void*)>(lib,
-                                                                                   "engine_init");
+    auto* init =
+        required_symbol<void(std::uint64_t, const me_transport_t*, void*)>(lib, "engine_init");
     auto* shutdown = required_symbol<void()>(lib, "engine_shutdown");
     auto* on_new = required_symbol<void(const new_order_t*)>(lib, "engine_on_new_order");
     auto* on_cancel = required_symbol<void(const cancel_t*)>(lib, "engine_on_cancel");
@@ -144,8 +143,8 @@ int main(int argc, char** argv) {
     auto* flush = required_symbol<void()>(lib, "engine_flush");
     auto* best_bid = required_symbol<std::int64_t()>(lib, "engine_query_best_bid");
     auto* best_ask = required_symbol<std::int64_t()>(lib, "engine_query_best_ask");
-    auto* depth_at = required_symbol<std::uint64_t(std::int64_t, std::uint8_t)>(
-        lib, "engine_query_depth_at");
+    auto* depth_at =
+        required_symbol<std::uint64_t(std::int64_t, std::uint8_t)>(lib, "engine_query_depth_at");
 
     if (!init || !shutdown || !on_new || !on_cancel || !on_modify || !flush || !best_bid ||
         !best_ask || !depth_at) {
@@ -168,8 +167,8 @@ int main(int argc, char** argv) {
     for (const Message& m : messages) {
         switch (m.type) {
             case kMsgNew: {
-                const new_order_t order{m.order_id, m.seq,  m.price_ticks, m.quantity,
-                                        m.side,     m.ioc,  {}};
+                const new_order_t order{m.order_id, m.seq, m.price_ticks, m.quantity, m.side,
+                                        m.ioc,      {}};
                 on_new(&order);
                 break;
             }
@@ -196,14 +195,11 @@ int main(int argc, char** argv) {
     std::vector<match::Report> reports;
     reports.reserve(g_drained.size());
     for (const me_report_t& r : g_drained) {
-        reports.push_back(match::Report{static_cast<match::ReportType>(r.type),
-                                        static_cast<match::Side>(r.side),
-                                        match::SeqNum{r.sequence_number},
-                                        match::OrderId{r.order_id},
-                                        match::Price{r.price_ticks},
-                                        match::Quantity{r.quantity},
-                                        match::OrderId{r.maker_order_id},
-                                        match::OrderId{r.taker_order_id}});
+        reports.push_back(
+            match::Report{static_cast<match::ReportType>(r.type), static_cast<match::Side>(r.side),
+                          match::SeqNum{r.sequence_number}, match::OrderId{r.order_id},
+                          match::Price{r.price_ticks}, match::Quantity{r.quantity},
+                          match::OrderId{r.maker_order_id}, match::OrderId{r.taker_order_id}});
     }
     std::cout << "reports: " << reports.size() << '\n';
 

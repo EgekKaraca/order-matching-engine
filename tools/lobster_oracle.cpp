@@ -27,6 +27,8 @@
 //      aggressor form so that injected orders can win a queue race, and the
 //      null-order-invariance check — replay with zero strategy orders must
 //      reproduce this book byte for byte — is the gate between the two.
+#include "adapters/lobster.hpp"
+
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -37,7 +39,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include "adapters/lobster.hpp"
 #include "match/map_book.hpp"
 #include "match/report.hpp"
 #include "match/types.hpp"
@@ -150,8 +151,8 @@ void apply(Book& book, const lobster::Message& m, ExecutionModel model, Stats& s
             // message file is the venue's post-match record, so an order
             // recorded as "new" did not trade on arrival.
             book.on_new_order(match::Order{match::OrderId{m.order_id}, match::SeqNum{0},
-                                           match::Price{m.price}, match::Quantity{m.size},
-                                           m.side, match::TimeInForce::Gtc});
+                                           match::Price{m.price}, match::Quantity{m.size}, m.side,
+                                           match::TimeInForce::Gtc});
             break;
 
         case lobster::EventType::VisibleExecution:
@@ -182,9 +183,8 @@ void apply(Book& book, const lobster::Message& m, ExecutionModel model, Stats& s
                 // crossed, so an aggressor at the execution price might
                 // find better liquidity first. Counted rather than
                 // assumed away.
-                const match::Price best = aggressor_side == match::Side::Buy
-                                              ? book.best_ask()
-                                              : book.best_bid();
+                const match::Price best =
+                    aggressor_side == match::Side::Buy ? book.best_ask() : book.best_bid();
                 if (best != match::Price::no_ask() && best != match::Price::no_bid() &&
                     best != price && match::crosses(price, best, aggressor_side)) {
                     ++stats.swept_better_level;
@@ -193,9 +193,9 @@ void apply(Book& book, const lobster::Message& m, ExecutionModel model, Stats& s
                 // IOC: an execution consumes what is there and leaves
                 // nothing resting behind. A GTC residual would invent
                 // liquidity the venue never had.
-                book.on_new_order(match::Order{
-                    match::OrderId{kAggressorId}, match::SeqNum{0}, price,
-                    match::Quantity{m.size}, aggressor_side, match::TimeInForce::Ioc});
+                book.on_new_order(match::Order{match::OrderId{kAggressorId}, match::SeqNum{0},
+                                               price, match::Quantity{m.size}, aggressor_side,
+                                               match::TimeInForce::Ioc});
                 break;
             }
             [[fallthrough]];
@@ -238,7 +238,6 @@ void apply(Book& book, const lobster::Message& m, ExecutionModel model, Stats& s
             ++stats.halt;  // the published row duplicates the preceding state
             break;
     }
-
 }
 
 }  // namespace
@@ -295,16 +294,16 @@ int main(int argc, char** argv) {
             const std::int64_t bid_size = seed[4 * i + 3];
 
             if (ask_price != lobster::kEmptyAskPrice && ask_size > 0) {
-                book.on_new_order(match::Order{match::OrderId{next_synthetic_id++}, match::SeqNum{0},
-                                               match::Price{ask_price},
-                                               match::Quantity{static_cast<std::uint32_t>(ask_size)},
-                                               match::Side::Sell, match::TimeInForce::Gtc});
+                book.on_new_order(match::Order{
+                    match::OrderId{next_synthetic_id++}, match::SeqNum{0}, match::Price{ask_price},
+                    match::Quantity{static_cast<std::uint32_t>(ask_size)}, match::Side::Sell,
+                    match::TimeInForce::Gtc});
             }
             if (bid_price != lobster::kEmptyBidPrice && bid_size > 0) {
-                book.on_new_order(match::Order{match::OrderId{next_synthetic_id++}, match::SeqNum{0},
-                                               match::Price{bid_price},
-                                               match::Quantity{static_cast<std::uint32_t>(bid_size)},
-                                               match::Side::Buy, match::TimeInForce::Gtc});
+                book.on_new_order(match::Order{
+                    match::OrderId{next_synthetic_id++}, match::SeqNum{0}, match::Price{bid_price},
+                    match::Quantity{static_cast<std::uint32_t>(bid_size)}, match::Side::Buy,
+                    match::TimeInForce::Gtc});
             }
         }
         // The seeded snapshot can be crossed at the touch — it is a depth
@@ -361,9 +360,9 @@ int main(int argc, char** argv) {
     }
 
     const auto pct = [&](std::size_t n) {
-        return stats.compared == 0 ? 0.0
-                                   : 100.0 * static_cast<double>(n) /
-                                         static_cast<double>(stats.compared);
+        return stats.compared == 0
+                   ? 0.0
+                   : 100.0 * static_cast<double>(n) / static_cast<double>(stats.compared);
     };
 
     std::printf("rows replayed        : %zu\n", stats.rows);
@@ -389,9 +388,9 @@ int main(int argc, char** argv) {
     std::printf("trades printed       : %zu\n", stats.trades);
     if (model == ExecutionModel::Aggressor) {
         const auto queue_pct = [&](std::size_t n) {
-            return stats.executions == 0 ? 0.0
-                                         : 100.0 * static_cast<double>(n) /
-                                               static_cast<double>(stats.executions);
+            return stats.executions == 0
+                       ? 0.0
+                       : 100.0 * static_cast<double>(n) / static_cast<double>(stats.executions);
         };
         std::printf("\nqueue-position agreement (aggressor model)\n");
         std::printf("  executions replayed: %zu\n", stats.executions);

@@ -1,11 +1,11 @@
 #include "adapters/lobster.hpp"
 
-#include <gtest/gtest.h>
-
 #include <cstdint>
 #include <string>
 
 #include "match/types.hpp"
+
+#include <gtest/gtest.h>
 
 namespace lobster {
 namespace {
@@ -54,9 +54,12 @@ TEST(ParseMessage, ClassifiesEveryEventType) {
         EventType type;
         bool visible;
     } cases[] = {
-        {1, EventType::NewLimitOrder, true},   {2, EventType::PartialCancel, true},
-        {3, EventType::Delete, true},          {4, EventType::VisibleExecution, true},
-        {5, EventType::HiddenExecution, false}, {6, EventType::CrossTrade, false},
+        {1, EventType::NewLimitOrder, true},
+        {2, EventType::PartialCancel, true},
+        {3, EventType::Delete, true},
+        {4, EventType::VisibleExecution, true},
+        {5, EventType::HiddenExecution, false},
+        {6, EventType::CrossTrade, false},
         {7, EventType::Halt, false},
     };
     for (const auto& c : cases) {

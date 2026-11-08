@@ -41,10 +41,10 @@ enum class ReportType : std::uint8_t {
 // canonical serialiser wants to sort a contiguous array of them.
 struct Report {
     ReportType type{};
-    Side side{};             // the originating order's side, where meaningful
-    SeqNum seq{};            // the aggressive / originating order's sequence number
-    OrderId order_id{};      // the order this report concerns
-    Price price{};           // Trade: the MAKER's resting price
+    Side side{};         // the originating order's side, where meaningful
+    SeqNum seq{};        // the aggressive / originating order's sequence number
+    OrderId order_id{};  // the order this report concerns
+    Price price{};       // Trade: the MAKER's resting price
     Quantity quantity{};
     OrderId maker_order_id{};  // Trade only
     OrderId taker_order_id{};  // Trade only

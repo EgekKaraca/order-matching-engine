@@ -12,12 +12,12 @@
 #ifndef SIM_MID_SERIES_HPP
 #define SIM_MID_SERIES_HPP
 
+#include "sim/types.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <utility>
 #include <vector>
-
-#include "sim/types.hpp"
 
 namespace sim {
 
