@@ -422,7 +422,7 @@ TEST_P(PropertyTest, InvariantsHoldAfterEveryMessage) {
 INSTANTIATE_TEST_SUITE_P(Seeds, PropertyTest,
                          ::testing::Values(1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610,
                                            987, 1597),
-                         [](const auto& info) { return "seed" + std::to_string(info.param); });
+                         [](const auto& seed) { return "seed" + std::to_string(seed.param); });
 
 }  // namespace
 }  // namespace match

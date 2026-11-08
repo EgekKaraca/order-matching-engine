@@ -166,7 +166,7 @@ TEST_P(EngineEquivalence, ArenaBookMatchesMapBookExactly) {
 
 INSTANTIATE_TEST_SUITE_P(Seeds, EngineEquivalence,
                          ::testing::Values(1, 2, 3, 5, 8, 13, 21, 34, 55, 89),
-                         [](const auto& info) { return "seed" + std::to_string(info.param); });
+                         [](const auto& seed) { return "seed" + std::to_string(seed.param); });
 
 }  // namespace
 }  // namespace match
