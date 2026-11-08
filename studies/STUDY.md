@@ -42,7 +42,11 @@ At 100-share orders and 500 µs order latency:
 | A — naive | 1,118 | $467 | −$2,163 | −$3,171 | −$6,147 | **+$783** |
 | C — L3 exact | 908 | $1,075 | −$937 | −$3,886 | −$3,730 | **−$2,114** |
 
-**The strategy is profitable under the naive fill model and loss-making under the real one.**
+**The strategy is profitable under the naive fill model and loss-making under the real one** —
+at 100 shares and 500 µs. Crossing size against latency later showed this sign flip holds in only
+**6 of 21 cells**, while `PnL_A > PnL_C` holds in **21 of 21** (see *Does the headline survive
+both axes?* below). The overstatement is the finding; the sign flip is how it looks at one
+coordinate.
 
 The mark-outs are the mechanism. Both models show negative mark-outs — a passive maker is
 adversely selected under either — but the naive model books fills it would never have received,
@@ -65,12 +69,41 @@ rather than the limit:
 | 100 | 91.7% | $783 | −$2,114 | 370% | strained |
 | 300 | 275% | −$2,233 | −$6,318 | 183% | strained |
 
-**The sign flip survives at a defensible size.** At 9.2% of displayed depth the naive model still
-reports a profit and the L3 model still reports a loss. That is the result this work earns; the
-370% is not.
+**The sign flip survives at a defensible size, at this latency.** At 9.2% of displayed depth the
+naive model still reports a profit and the L3 model still reports a loss. That is nearer the
+result this work earns; the 370% is not.
 
 The gap grows monotonically with size across the defensible range, which is mechanically what
 should happen — a larger order waits longer in the queue, so the naive model's error compounds.
+
+### Does the headline survive both axes?
+
+Both sweeps above are one-dimensional slices: size varies at a fixed 500 µs latency, latency
+varies at a fixed 100 shares. They never cross — so the cell the headline lives in, a defensible
+order size, had only ever been run at a single latency. That is a thin basis for the study's most
+quotable sentence, and crossing the axes was overdue:
+
+```
+ size\us          0        100        500       1000       5000      20000     100000
+       1       FLIP        dir        dir        dir        dir        dir        dir
+      10       FLIP        dir       FLIP       FLIP        dir        dir        dir
+      50        dir        dir       FLIP       FLIP        dir        dir        dir
+
+sign flip holds in 6 of 21 cells; PnL_C < PnL_A in 21 of 21.
+```
+
+`FLIP` = naive reports a profit *and* L3 exact reports a loss. `dir` = `PnL_C < PnL_A` with no
+sign change.
+
+**The directional claim is unanimous; the sign flip is a minority of the space.** At 10 shares it
+holds at 0, 500 and 1000 µs and fails at 100 µs and from 5 ms upward — not because the models
+converge, but because `PnL_A` itself turns negative, so there is no profit left to flip. The
+strategy is simply bad at those latencies under either model.
+
+The consequence for how this is written up: **lead with "the naive fill model overstates PnL,
+everywhere tested."** Use the sign flip as the illustration it is, always with its size and
+latency attached. Quoting it bare would be exactly the kind of coordinate-dependent claim this
+project exists to catch other people making.
 
 ### Robustness
 
@@ -204,6 +237,11 @@ Sweeping the crowd-out intensity (0 = the published impact-free baseline), 10-sh
 **The sign flip survives the entire sweep and the gap is stable at 118–131%.** The headline
 does not rest on the impact-free assumption — which is what this study existed to test, and
 was not the guaranteed answer.
+
+Note the same limitation as the other sweeps: this one varies the reaction strength with size and
+latency held fixed. It establishes that the result is not an artefact *of the impact assumption*;
+it does not extend the sign flip's reach across the size × latency grid, where it holds in 6 of
+21 cells.
 
 Read as a **sensitivity, not a correction**. The model captures one mechanism — participants
 declining to queue behind a visible order — and does not move the mid, model informed flow, or

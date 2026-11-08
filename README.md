@@ -22,7 +22,7 @@ measured runs only.
 | **LOBSTER reconstruction** vs. the venue's published book | ✅ **top-of-book exact for 54,605 consecutive events; 99.90% of the session.** See the bound below. |
 | **Cross-validation** vs. a published live-trading experiment | ⚠️ **one direction reproduced, one contradicted** — see `studies/STUDY.md`. Recorded, not tuned away. |
 | **Impact-free assumption** | ✅ now a swept parameter rather than a premise. The gap is stable at 118–131% across the sweep. |
-| **The fill-model gap** | ⚠️ **first measurement taken — see below.** Directionally clear, but single-sample and with one model unvalidated. |
+| **The fill-model gap** | ✅ **direction robust — `PnL_A > PnL_C` in 21 of 21 size × latency cells.** ⚠️ The *sign flip* holds in only 6 of 21 and must be quoted with its coordinates. One day, one stock, one model excluded. |
 
 ### What "report-stream correctness" does and does not mean
 
@@ -48,11 +48,24 @@ latency, three fill models. AAPL 2012-06-21, 09:30–10:30, order latency 500 µ
 | B — L2 probabilistic *(experimental, excluded)* | 711 | $2,026 | −$1,010 | +$2,403 | 100 |
 | **C — L3 exact** (real queue) | 908 | $1,075 | −$3,886 | **−$2,114** | 90 |
 
-**The strategy is profitable under the naive fill model and loss-making under the real one.**
-That is the single most useful sentence this project can produce, and it is a negative result
-about the strategy rather than a positive one — which is the point.
+**The strategy is profitable under the naive fill model and loss-making under the real one** —
+at this size and this latency. That is a negative result about the strategy rather than a
+positive one, which is the point. But it is the *illustration*, not the finding, and the
+distinction survived a check that nearly wasn't made:
 
-`PnL_A > PnL_C` at every latency tested (0 to 100 ms).
+> **`PnL_A > PnL_C` in 21 of 21 size × latency cells. The sign flip holds in 6 of 21.**
+>
+> The two sweeps below are one-dimensional slices — size varies at a fixed 500 µs latency,
+> latency varies at a fixed 100 shares — so the cell the headline actually lives in (a
+> *defensible* order size) had only ever been run at one latency. Crossing the axes shows the
+> sign flip is conditional: at 10 shares it holds at 0, 500 and 1000 µs and fails at 100 µs and
+> at 5 ms and above, because `PnL_A` itself goes negative there.
+>
+> **So the robust claim is the directional one: the naive fill model overstates PnL everywhere
+> tested, without exception.** The sign flip is a vivid way to show it and should never be quoted
+> without its latency attached — it is a property of a cell, not of the data.
+
+Reproduce the grid with the `size x latency` section of `fill_model_study`.
 
 #### But that table is at an order size the simulator cannot fully defend
 
@@ -72,10 +85,15 @@ rather than the limit:
 | 100 | 91.7% | $783 | −$2,114 | 370% | strained |
 | 300 | 275% | −$2,233 | −$6,318 | 183% | strained |
 
-**The sign flip survives at a defensible size.** At 10 shares — 9.2% of displayed depth, small
-enough that the no-impact assumption is reasonable — the naive model still reports a profit
-(+$217) and the L3 model still reports a loss (−$46). That, not the 370%, is the result this
-work actually earns.
+**The sign flip survives at a defensible size — at this latency.** At 10 shares (9.2% of
+displayed depth, small enough that the no-impact assumption is reasonable) the naive model still
+reports a profit (+$217) and the L3 model still reports a loss (−$46). That, not the 370%, is
+the closest thing to a headline this work earns.
+
+But it earns it only jointly with the latency it was measured at: the size × latency grid above
+shows this same cell losing its sign flip at 100 µs and at 5 ms and beyond, because `PnL_A` is
+itself negative there. **The claim that holds everywhere is that the naive model overstates —
+21 of 21 cells.** Lead with that; use the sign flip as the illustration, with its coordinates.
 
 The gap also grows monotonically with size across the defensible range (85% → 121% → 207% →
 370%), which is the mechanically expected direction: a larger order waits longer in the queue,

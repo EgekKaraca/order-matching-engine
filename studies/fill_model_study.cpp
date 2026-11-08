@@ -45,6 +45,11 @@ namespace {
 constexpr std::size_t kLevels = 50;
 constexpr double kUnitsPerDollar = 10000.0;
 
+// One list, used by the latency sweep, the size x latency grid, and the CSV.
+// It was previously written out inline in each place, which is how a sweep and
+// its own machine-readable copy quietly stop agreeing.
+constexpr std::int64_t kLatencies[] = {0, 100, 500, 1000, 5000, 20000, 100000};
+
 struct Result {
     std::string model;
     std::size_t fills = 0;
@@ -259,7 +264,7 @@ int main(int argc, char** argv) {
     // --- sensitivity to order latency ---------------------------------------
     std::printf("\n=== how the gap varies with order latency ===\n");
     std::printf("%12s %12s %12s %12s %10s\n", "latency(us)", "PnL_A", "PnL_B", "PnL_C", "gap");
-    for (const std::int64_t latency : {0, 100, 500, 1000, 5000, 20000, 100000}) {
+    for (const std::int64_t latency : kLatencies) {
         sim::NaiveFill a;
         sim::ProbQueueFill b{1.0};
         sim::L3ExactFill c;
@@ -313,6 +318,51 @@ int main(int argc, char** argv) {
                     fraction <= 0.10 ? "defensible" : "ASSUMPTION STRAINED");
     }
 
+    // --- does the headline survive BOTH axes at once? -----------------------
+    //
+    // The two sweeps above are one-dimensional slices: size varies at a fixed
+    // 500us latency, latency varies at a fixed 100 shares. The claim this study
+    // actually makes lives at their intersection — "the sign flip survives at a
+    // defensible order size" — and that cell (size 10) had only ever been run
+    // at one latency. The latency sweep at 100 shares shows PnL_A going NEGATIVE
+    // at 0us and 100us, so a single sample is not enough to know whether the
+    // headline is a property of the data or of one latency choice.
+    //
+    // FLIP = the headline claim: naive reports a profit AND L3 exact reports a
+    //        loss. dir  = the weaker directional claim: PnL_C < PnL_A but no
+    //        sign change. Both are reported because they fail independently and
+    //        the weaker one is what the write-up should lean on if FLIP is thin.
+    std::printf("\n=== does the sign flip survive size x latency? ===\n");
+    std::printf("%8s", "size\\us");
+    for (const std::int64_t latency : kLatencies) {
+        std::printf(" %10lld", static_cast<long long>(latency));
+    }
+    std::printf("\n");
+
+    int flip_cells = 0, dir_cells = 0, total_cells = 0;
+    for (const std::uint32_t size : {1u, 10u, 50u}) {
+        std::printf("%8u", size);
+        for (const std::int64_t latency : kLatencies) {
+            sim::NaiveFill a;
+            sim::L3ExactFill c;
+            const auto ra = run(a, events, seed, offset, latency, size);
+            const auto rc = run(c, events, seed, offset, latency, size);
+            ++total_cells;
+
+            const bool flip = ra.pnl > 0.0 && rc.pnl < 0.0;
+            const bool directional = rc.pnl < ra.pnl;
+            if (flip) ++flip_cells;
+            if (directional) ++dir_cells;
+            std::printf(" %10s", flip ? "FLIP" : directional ? "dir" : "-");
+        }
+        std::printf("\n");
+    }
+    std::printf("\nsign flip holds in %d of %d cells; PnL_C < PnL_A in %d of %d.\n", flip_cells,
+                total_cells, dir_cells, total_cells);
+    std::printf(
+        "The directional claim is the robust one. Quote the sign flip only with\n"
+        "its latency attached — it is not a property of the data alone.\n");
+
     // --- sensitivity to time of day -----------------------------------------
     //
     // The sample is 09:30-10:30, which is the least representative hour of the
@@ -355,7 +405,7 @@ int main(int argc, char** argv) {
         const std::string dir = csv_dir;
         if (std::FILE* f = std::fopen((dir + "/latency_sweep.csv").c_str(), "w")) {
             std::fprintf(f, "order_latency_us,pnl_a,pnl_b,pnl_c,gap\n");
-            for (const std::int64_t latency : {0, 100, 500, 1000, 5000, 20000, 100000}) {
+            for (const std::int64_t latency : kLatencies) {
                 sim::NaiveFill a;
                 sim::ProbQueueFill b{1.0};
                 sim::L3ExactFill c;
